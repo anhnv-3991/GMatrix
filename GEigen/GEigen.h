@@ -279,6 +279,7 @@ public:
 
 		return true;
 	}
+
 protected:
 	float *buffer_;
 	int rows_, cols_, offset_;
@@ -314,8 +315,9 @@ public:
 				- buffer_[offset_] * buffer_[3 * offset_] * buffer_[8 * offset_] - buffer_[0] * buffer_[5 * offset_] * buffer_[7 * offset_]);
 
 		float retval = 0;
+		float sign = 1;
 
-		for (int i = 0, float sign = 1; i < rows_; i++, sign *= (-1)) {
+		for (int i = 0; i < rows_; i++, sign *= (-1)) {
 			SquareMatrix sub_matrix(rows_ - 1, offset_, temp_buffer);
 
 			getSubMatrix(0, i, &sub_matrix);
@@ -341,7 +343,9 @@ public:
 			return true;
 		}
 
-		for (int i = 0, float sign = 1; i < rows_; i++) {
+		float sign = 1;
+
+		for (int i = 0; i < rows_; i++) {
 			for (int j = 0; j < cols_; j++, sign *= (-1)) {
 				SquareMatrix sub_matrix(rows_ - 1, offset_, temp_buffer);
 
@@ -411,6 +415,8 @@ public:
 		for (int i = 0; i < cols_; i++) {
 			retval += buffer_[i * offset_] * input.at(i);
 		}
+
+		return retval;
 	}
 };
 
