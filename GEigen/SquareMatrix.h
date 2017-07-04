@@ -8,7 +8,7 @@
 
 namespace gpu {
 
-	class SquareMatrix : protected Matrix {
+	class SquareMatrix : public Matrix {
 	public:
 		CUDAH SquareMatrix() {
 			rows_ = cols_ = 0;
@@ -84,7 +84,7 @@ namespace gpu {
 		}
 	};
 
-	class IdentityMatrix : protected SquareMatrix {
+	class IdentityMatrix : public SquareMatrix {
 	public:
 		CUDAH IdentityMatrix() {
 			rows_ = cols_ = 0;

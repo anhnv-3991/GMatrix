@@ -17,19 +17,20 @@ public:
 
 	Matrix(int rows, int cols);
 
-	int getRowsCount() {
+	//Device-side methods
+	CUDAH int getRowsCount() const {
 		return rows_;
 	}
 
-	int getColsCount() {
+	CUDAH int getColsCount() const {
 		return cols_;
 	}
 
-	int getOffset() {
+	CUDAH int getOffset() const {
 		return offset_;
 	}
 
-	float *getBuffer() {
+	CUDAH float *getBuffer() const {
 		return buffer_;
 	}
 
@@ -299,10 +300,15 @@ public:
 		return true;
 	}
 
+	//Host-side methods
+	bool operator!=(const Matrix mat) const;
+	bool setValFromHost(int row, int col, float val);
+
 protected:
 	float *buffer_;
 	int rows_, cols_, offset_;
 };
+
 }
 
 #endif

@@ -3,6 +3,22 @@
 
 namespace gpu {
 
+GRegistration::GRegistration()
+{
+	trans_epsilon_ = 0;
+	step_size_ = 0;
+	resolution_ = 0;
+	max_iterations_ = 0;
+	x_ = y_ = z_ = NULL;
+	points_number_ = 0;
+		
+	out_x_ = out_y_ = out_z_ = NULL;
+	out_points_num_ = 0;
+
+	converged_ = false;
+	nr_iterations_ = 0;
+}
+
 void GRegistration::setTransformationEpsilon(double trans_eps)
 {
 	trans_epsilon_ = trans_eps;
@@ -43,14 +59,14 @@ void GRegistration::setInitGuess(const Matrix input)
 	int rows = input.getRowsCount();
 	int cols = input.getColsCount();
 	int offset = input.getOffset();
-	float *ibuffer = input.getBuffer();
+	float const *ibuffer = input.getBuffer();
 	float *obuffer = NULL;
 
-	if (row > 0 && col > 0) {
+	if (rows > 0 && cols > 0) {
 		checkCudaErrors(cudaMalloc(&obuffer, sizeof(float) * rows * cols * offset));
 		checkCudaErrors(cudaMemcpy(obuffer, ibuffer, sizeof(float) * rows * cols * offset, cudaMemcpyHostToDevice));
 
-		init_guess = Matrix(rows, cols, offset, obuffer);
+		init_guess_ = Matrix(rows, cols, offset, obuffer);
 	}
 }
 
