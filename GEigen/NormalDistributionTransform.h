@@ -10,7 +10,7 @@ namespace gpu {
 class GNormalDistributionTransform: protected GRegistration {
 public:
 protected:
-	void computeTransform();
+	void computeTransformation();
 
 private:
 	void transformPointCloud(float *in_x, float *in_y, float *in_z,

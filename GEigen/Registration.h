@@ -4,6 +4,8 @@
 #include <cuda.h>
 #include <cuda_runtime.h>
 #include "Matrix.h"
+#include "MatrixHost.h"
+#include "MatrixDevice.h"
 #include "SquareMatrix.h"
 #include "Vector.h"
 #include "common.h"
@@ -45,7 +47,7 @@ protected:
 	Matrix transformation_, final_transformation_, previous_transformation_;
 	int nr_iterations_;
 
-	Matrix point_gradient_, point_hessian_;
+	MatrixHost point_gradient_, point_hessian_;
 
 };
 }

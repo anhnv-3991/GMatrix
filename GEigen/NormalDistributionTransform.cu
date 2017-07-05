@@ -6,7 +6,7 @@ namespace gpu {
 
 
 
-void GNormalDistributionTransform::computeTransform()
+void GNormalDistributionTransform::computeTransformation()
 {
 	nr_iterations_ = 0;
 	converged_ = false;
@@ -25,12 +25,12 @@ void GNormalDistributionTransform::computeTransform()
 		transformPointCloud(out_x_, out_y_, out_z_, out_x_, out_y_, out_z_, points_number_, init_guess_);
 	}
 
-	point_gradient_ = Matrix(3, 6);
-	point_hessian_ = Matrix(18, 6);
+	point_gradient_ = MatrixHost(3, 6);
+	point_hessian_ = MatrixHost(18, 6);
 
-	point_gradient_.setValFromHost(0, 0, 1);
-	point_gradient_.setValFromHost(1, 1, 1);
-	point_gradient_.setValFromHost(2, 2, 1);
+	point_gradient_(0, 0) = 1;
+	point_gradient_(1, 1) = 1;
+	point_gradient_(2, 2) = 1;
 
 	Matrix p(6, 1), delta_p(6, 1), score_gradient(6, 1);
 }
