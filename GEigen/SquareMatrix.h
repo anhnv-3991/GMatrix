@@ -1,8 +1,12 @@
+#ifndef GSQUARE_MATRIX_H_
+#define GSQUARE_MATRIX_H_
+
 #include <cuda.h>
 #include <cuda_runtime.h>
 #include "Matrix.h"
+#include "common.h"
 
-namespace GEigen {
+namespace gpu {
 
 	class SquareMatrix : protected Matrix {
 	public:
@@ -11,6 +15,8 @@ namespace GEigen {
 			offset_ = 0;
 			buffer_ = NULL;
 		}
+
+		SquareMatrix(int size);
 
 		CUDAH SquareMatrix(int size, int offset, float *buffer) {
 			rows_ = cols_ = size;
@@ -86,6 +92,8 @@ namespace GEigen {
 			buffer_ = NULL;
 		}
 
+		IdentityMatrix(int size);
+
 		CUDAH IdentityMatrix(int size, int offset, float *buffer) {
 			rows_ = size;
 			cols_ = size;
@@ -100,3 +108,5 @@ namespace GEigen {
 		}
 	};
 }
+
+#endif

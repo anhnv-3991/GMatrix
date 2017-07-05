@@ -1,17 +1,36 @@
+#ifndef GMATRIX_H_
+#define GMATRIX_H_
 
 #include "cuda.h"
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
+#include "common.h"
 
-#define CUDAH __forceinline__ __host__ __device__
-
-namespace GEigen {
+namespace gpu {
 
 class Matrix {
 public:
 	CUDAH Matrix() {
 		buffer_ = NULL;
 		rows_ = cols_ = offset_ = 0;
+	}
+
+	Matrix(int rows, int cols);
+
+	int getRowsCount() {
+		return rows_;
+	}
+
+	int getColsCount() {
+		return cols_;
+	}
+
+	int getOffset() {
+		return offset_;
+	}
+
+	float *getBuffer() {
+		return buffer_;
 	}
 
 	CUDAH Matrix(int rows, int cols, int offset, float *buffer) {
@@ -285,5 +304,7 @@ protected:
 	int rows_, cols_, offset_;
 };
 }
+
+#endif
 
 

@@ -1,8 +1,12 @@
+#ifndef GVECTOR_H_
+#define GVECTOR_H_
+
 #include <cuda.h>
 #include <cuda_runtime.h>
 #include "Matrix.h"
+#include "common.h"
 
-namespace GEigen {
+namespace gpu {
 
 	class Vector : protected Matrix {
 	public:
@@ -44,3 +48,5 @@ namespace GEigen {
 	};
 
 }
+
+#endif
