@@ -39,12 +39,14 @@ protected:
 	int max_iterations_;
 	float *x_, *y_, *z_;
 	int points_number_;
-	Matrix init_guess_;
+	MatrixDevice init_guess_;
+	MatrixHost init_guess_host_;
 	float *out_x_, *out_y_, *out_z_;
 	int out_points_num_;
 
 	bool converged_;
-	Matrix transformation_, final_transformation_, previous_transformation_;
+	MatrixDevice transformation_, final_transformation_, previous_transformation_;
+	MatrixHost host_transformation_, host_final_transformation_, host_previous_transformation_;
 	int nr_iterations_;
 
 	MatrixHost point_gradient_, point_hessian_;

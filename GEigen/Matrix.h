@@ -1,9 +1,8 @@
 #ifndef GMATRIX_H_
 #define GMATRIX_H_
 
-#include "cuda.h"
-#include "cuda_runtime.h"
-#include "device_launch_parameters.h"
+#include <cuda.h>
+#include <cuda_runtime.h>
 #include "common.h"
 
 namespace gpu {
@@ -15,19 +14,19 @@ public:
 		rows_ = cols_ = offset_ = 0;
 	}
 	
-	CUDAH int getRowsCount() const {
+	CUDAH int rows() const {
 		return rows_;
 	}
 
-	CUDAH int getColsCount() const {
+	CUDAH int cols() const {
 		return cols_;
 	}
 
-	CUDAH int getOffset() const {
+	CUDAH int offset() const {
 		return offset_;
 	}
 
-	CUDAH float *getBuffer() const {
+	CUDAH float *buffer() const {
 		return buffer_;
 	}
 
@@ -48,6 +47,19 @@ public:
 			exit(EXIT_FAILURE);
 
 		return buffer_[(row * cols_ + col) * offset_];
+	}
+
+	CUDAH float& operator()(int index) {
+		if (rows_ == 1) {
+			if (index >= 0 && index < cols_)
+				return buffer_[index * offset_];
+		} else if (cols_ == 1) {
+			if (index >= 0 && index < rows_)
+				return buffer_[index * offset_];
+		} else
+			exit(EXIT_FAILURE);
+
+		return -1;
 	}
 
 	CUDAH bool operator==(const Matrix mat) {
@@ -85,16 +97,6 @@ public:
 		return buffer_[(row * cols_ + col) * offset_];
 	}
 
-	CUDAH bool set(int row, int col, float val) {
-		if (row < 0 || col < 0 || row >= rows_ || col >= cols_)
-			return false;
-
-		buffer_[(row * cols_ + col) * offset_] = val;
-
-		return true;
-	}
-
-
 	/* Get sub Matrix by removing row row and column col
 	* from the current matrix.
 	*/
@@ -105,28 +107,28 @@ public:
 		//Get upper left quater
 		for (int i = 0; i < row; i++) {
 			for (int j = 0; j < col; j++) {
-				output->set(i, j, buffer_[(i * cols_ + j) * offset_]);
+				output(i, j) = buffer_[(i * cols_ + j) * offset_];
 			}
 		}
 
 		//Get upper righ quater
 		for (int i = 0; i < row; i++) {
 			for (int j = col + 1; j < cols_; j++) {
-				output->set(i, j - 1, buffer_[(i * cols_ + j) * offset_]);
+				output(i, j - 1) = buffer_[(i * cols_ + j) * offset_];
 			}
 		}
 
 		//Get lower left quater
 		for (int i = row + 1; i < rows_; i++) {
 			for (int j = 0; j < row; j++) {
-				output->set(i - 1, j, buffer_[(i * cols_ + j) * offset_]);
+				output(i - 1, j) = buffer_[(i * cols_ + j) * offset_];
 			}
 		}
 
 		//Get lower right quater
 		for (int i = row + 1; i < rows_; i++) {
 			for (int j = col + 1; j < cols_; j++) {
-				output->set(i - 1, j - 1, buffer_[(i * cols_ + j) * offset_]);
+				output(i - 1, j - 1) = buffer_[(i * cols_ + j) * offset_];
 			}
 		}
 
@@ -139,20 +141,7 @@ public:
 
 		for (int i = 0; i < input0.rows_; i++) {
 			for (int j = 0; j < input0.cols_; j++) {
-				output.set(i, j, input0.at(i, j) + input1.at(i, j));
-			}
-		}
-
-		return true;
-	}
-
-	static CUDAH bool add(const Matrix input0, const Matrix input1, Matrix *output) {
-		if (input0.rows_ != input1.rows_ || input0.rows_ != output->rows_ || input0.cols_ != input1.cols_ || input0.cols_ != output->cols_)
-			return false;
-
-		for (int i = 0; i < input0.rows_; i++) {
-			for (int j = 0; j < input0.cols_; j++) {
-				output->set(i, j, input0.at(i, j) + input1.at(i, j));
+				output(i, j) = input0.at(i, j) + input1.at(i, j);
 			}
 		}
 
@@ -165,20 +154,7 @@ public:
 
 		for (int i = 0; i < input0.rows_; i++) {
 			for (int j = 0; j < input0.cols_; j++) {
-				output.set(i, j, input0.at(i, j) - input1.at(i, j));
-			}
-		}
-
-		return true;
-	}
-
-	static CUDAH bool subtract(const Matrix input0, const Matrix input1, Matrix *output) {
-		if (input0.rows_ != input1.rows_ || input0.rows_ != output->rows_ || input0.cols_ != input1.cols_ || input0.cols_ != output->cols_)
-			return false;
-
-		for (int i = 0; i < input0.rows_; i++) {
-			for (int j = 0; j < input0.cols_; j++) {
-				output->set(i, j, input0.at(i, j) - input1.at(i, j));
+				output(i, j) = input0.at(i, j) - input1.at(i, j);
 			}
 		}
 
@@ -196,7 +172,7 @@ public:
 					tmp += input0.at(i, k) * input1.at(k, j);
 				}
 
-				output.set(i, j, tmp);
+				output(i, j) = tmp;
 			}
 		}
 
@@ -214,7 +190,7 @@ public:
 					tmp += input0.at(i, k) * input1.at(k, j);
 				}
 
-				output->set(i, j, tmp);
+				output(i, j) = tmp;
 			}
 		}
 

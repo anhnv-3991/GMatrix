@@ -56,17 +56,15 @@ void GRegistration::setInputSource(float *x, float *y, float *z, int points_num)
 
 void GRegistration::setInitGuess(const Matrix input)
 {
-	int rows = input.getRowsCount();
-	int cols = input.getColsCount();
-	int offset = input.getOffset();
-	float const *ibuffer = input.getBuffer();
+	int rows = input.rows();
+	int cols = input.cols();
+	int offset = input.offset();
+	float const *ibuffer = input.buffer();
 	float *obuffer = NULL;
 
 	if (rows > 0 && cols > 0) {
-		checkCudaErrors(cudaMalloc(&obuffer, sizeof(float) * rows * cols * offset));
-		checkCudaErrors(cudaMemcpy(obuffer, ibuffer, sizeof(float) * rows * cols * offset, cudaMemcpyHostToDevice));
 
-		init_guess_ = Matrix(rows, cols, offset, obuffer);
+		init_guess_ = MatrixDevice(rows, cols);
 	}
 }
 

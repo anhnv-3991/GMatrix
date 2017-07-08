@@ -5,19 +5,26 @@
 #include "MatrixDevice.h"
 
 namespace gpu {
-	class MatrixHost : public Matrix {
-	public:
-		MatrixHost() : Matrix() {};
-		MatrixHost(int rows, int cols);
+class MatrixHost : public Matrix {
+public:
+	MatrixHost() : Matrix() {};
+	MatrixHost(int rows, int cols);
 
-		bool moveToGpu(MatrixDevice output);
-		bool moveToHost(MatrixDevice input);
+	bool moveToGpu(MatrixDevice output);
+	bool moveToHost(MatrixDevice input);
 
-		//Host-side methods
-		bool operator!=(const MatrixHost mat) const;
+	bool operator!=(const MatrixHost mat) const;
+};
 
-	private:
-	};
+class SquareMatrixHost: public MatrixHost {
+public:
+	SquareMatrixHost(int size) : MatrixHost(size, size) {};
+};
+
+class IdentityMatrixHost: public SquareMatrixHost {
+public:
+	IdentityMatrixHost(int size);
+};
 }
 
 #endif
