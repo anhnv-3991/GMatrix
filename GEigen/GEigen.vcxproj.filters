@@ -1,0 +1,33 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <CudaCompile Include="Matrix.cu" />
+    <CudaCompile Include="Matrix.h" />
+    <CudaCompile Include="MatrixDevice.cu" />
+    <CudaCompile Include="MatrixHost.cu" />
+    <CudaCompile Include="NormalDistributionTransform.cu" />
+    <CudaCompile Include="Registration.cu" />
+    <CudaCompile Include="SquareMatrix.cu" />
+    <CudaCompile Include="octree\octree.cu">
+      <Filter>octree</Filter>
+    </CudaCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="common.h" />
+    <ClInclude Include="debug.h" />
+    <ClInclude Include="MatrixDevice.h" />
+    <ClInclude Include="MatrixHost.h" />
+    <ClInclude Include="NormalDistributionTransform.h" />
+    <ClInclude Include="Registration.h" />
+    <ClInclude Include="SquareMatrix.h" />
+    <ClInclude Include="Vector.h" />
+    <ClInclude Include="octree\octree.h">
+      <Filter>octree</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="octree">
+      <UniqueIdentifier>{423aa0ca-b1a7-4202-ae10-26c29662a4f0}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

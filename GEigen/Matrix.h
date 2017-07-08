@@ -30,6 +30,24 @@ public:
 		return buffer_;
 	}
 
+	CUDAH float *cellAddr(int row, int col) {
+		if (row >= rows_ || col >= cols_ || row < 0 || col < 0)
+			return NULL;
+
+		return buffer_ + (row * cols_ + col) * offset_;
+	}
+
+	CUDAH float *cellAddr(int index) {
+		if (rows_ == 1 && index >= 0 && index < cols_) {
+				return buffer_ + index * offset_;
+		} 
+		else if (cols_ == 1 && index >= 0 && index < rows_) {
+				return buffer_ + index * offset_;
+		}
+
+		return NULL;
+	}
+
 	//Assignment operator
 	CUDAH void operator=(const Matrix input) {
 		if (rows_ != input.rows_ || cols_ != input.cols_)
@@ -56,10 +74,9 @@ public:
 		} else if (cols_ == 1) {
 			if (index >= 0 && index < rows_)
 				return buffer_[index * offset_];
-		} else
-			exit(EXIT_FAILURE);
+		} 
 
-		return -1;
+		exit(EXIT_FAILURE);
 	}
 
 	CUDAH bool operator==(const Matrix mat) {
@@ -100,7 +117,7 @@ public:
 	/* Get sub Matrix by removing row row and column col
 	* from the current matrix.
 	*/
-	CUDAH bool getSubMatrix(int row, int col, Matrix *output) {
+	CUDAH bool getSubMatrix(int row, int col, Matrix &output) {
 		if (row >= rows_ || row < 0 || col >= cols_ || col < 0)
 			return false;
 
@@ -167,24 +184,6 @@ public:
 
 		for (int i = 0; i < output.rows_; i++) {
 			for (int j = 0; j < output.cols_; j++) {
-				float tmp = 0;
-				for (int k = 0; k < input0.cols_; k++) {
-					tmp += input0.at(i, k) * input1.at(k, j);
-				}
-
-				output(i, j) = tmp;
-			}
-		}
-
-		return true;
-	}
-
-	static CUDAH bool multiply(const Matrix input0, const Matrix input1, Matrix *output) {
-		if (input0.cols_ != input1.rows_ || input0.rows_ != output->rows_ || input1.cols_ != output->cols_)
-			return false;
-
-		for (int i = 0; i < output->rows_; i++) {
-			for (int j = 0; j < output->cols_; j++) {
 				float tmp = 0;
 				for (int k = 0; k < input0.cols_; k++) {
 					tmp += input0.at(i, k) * input1.at(k, j);

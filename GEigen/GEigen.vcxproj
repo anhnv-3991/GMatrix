@@ -156,6 +156,7 @@ copy "$(CudaToolkitBinDir)\cudart*.dll" "$(OutDir)"</Command>
     <CudaCompile Include="MatrixDevice.cu" />
     <CudaCompile Include="MatrixHost.cu" />
     <CudaCompile Include="NormalDistributionTransform.cu" />
+    <CudaCompile Include="octree\octree.cu" />
     <CudaCompile Include="Registration.cu" />
     <CudaCompile Include="SquareMatrix.cu" />
   </ItemGroup>
@@ -165,6 +166,7 @@ copy "$(CudaToolkitBinDir)\cudart*.dll" "$(OutDir)"</Command>
     <ClInclude Include="MatrixDevice.h" />
     <ClInclude Include="MatrixHost.h" />
     <ClInclude Include="NormalDistributionTransform.h" />
+    <ClInclude Include="octree\octree.h" />
     <ClInclude Include="Registration.h" />
     <ClInclude Include="SquareMatrix.h" />
     <ClInclude Include="Vector.h" />
