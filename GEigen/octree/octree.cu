@@ -151,9 +151,298 @@ extern "C" __global__ void insertPoints(float *x, float *y, float *z, int points
 	}
 }
 
+__device__ void tridiagonalize(MatrixDevice input, MatrixDevice output, float *u, float *v, float *z, int offset)
+{
+	for (int i = 0; i < input.rows(); i++) {
+		for (int j = 0; j < input.cols(); i++) {
+			output(i, j) = input(i, j);
+		}
+	}
+
+	int size = input.rows();
+
+	for (int k = 0; k < size - 2; k++) {
+		float q = 0;
+
+		for (int j = k + 1; j < size; j++) {
+			q += output(j, k) * output(j, k);
+		}
+
+		float alpha;
+
+		alpha = (output(k + 1, k) == 0) ? -sqrtf(q) : -(sqrt(q) * output(k + 1, k) / fabsf(output(k + 1, k)));
+
+		float rsq = alpha * alpha - alpha * output(k + 1, k);
+
+		v[k * offset] = 0;
+		v[(k + 1) * offset] = output(k + 1, k) - alpha;
+
+		for (int j = k + 2; j < size; j++) {
+			v[j * offset] = output(j, k);
+		}
+
+		for (int j = k; j < size; j++) {
+			float u_tmp = 0;
+
+			for (int i = k + 1; i < size; i++) {
+				u_tmp += output(j, i) * v[i * offset];
+			}
+
+			u[j * offset] = u_tmp / rsq;
+		}
+
+		float prod = 0;
+
+		for (int i = k + 1; i < size; i++) {
+			prod += v[i * offset] * u[i * offset];
+		}
+
+		for (int j = k; j < size; j++) {
+			z[j * offset] = u[j * offset] - (prod / (2 * rsq)) * v[j * offset];
+		}
+
+		for (int l = k + 1; l < size - 1; l++) {
+			for (int j = l + 1; j < size; j++) {
+				output(j, l) -= (v[l * offset] * z[j * offset] + v[j * offset] * z[l * offset]);
+				output(l, j) = output(j, l);
+			}
+
+			output(l, l) -= 2 * v[l * offset] * z[l * offset];
+		}
+
+		output(size - 1, size - 1) -= 2 * v[(size - 1) * offset] * z[(size - 1) * offset];
+
+		for (int j = k + 2; j < size; j++) {
+			output(k, j) = output(j, k) = 0;
+		}
+
+		output(k + 1, k) -= v[(k + 1) * offset] * z[k * offset];
+		output(k, k + 1) = output(k + 1, k);
+	}
+}
+
+__device__ void tridiagonalize3x3(MatrixDevice input, MatrixDevice output)
+{
+	output(0, 0) = input(0, 0);
+	output(0, 1) = input(0, 1);
+	output(0, 2) = input(0, 2);
+	output(1, 0) = input(1, 0);
+	output(1, 1) = input(1, 1);
+	output(1, 2) = input(1, 2);
+	output(2, 0) = input(2, 0);
+	output(2, 1) = input(2, 1);
+	output(2, 2) = input(2, 2);
+
+	float q = output(1, 0) * output(1, 0) + output(2, 0) * output(2, 0);
+	float alpha = (output(1, 0) == 0) ? -sqrtf(q) : -(sqrtf(q) * output(1, 0) / fabsf(output(1, 0)));
+	float rsq = alpha * alpha - alpha * output(1, 0);
+	float v0 = 0;
+	float v1 = output(1, 0) - alpha;
+	float v2 = output(2, 0);
+	float u0 = (1 / rsq) * (output(0, 1) * v1 + output(0, 2) * v2);
+	float u1 = (1 / rsq) * (output(1, 1) * v1 + output(1, 2) * v2);
+	float u2 = (1 / rsq) * (output(2, 1) * v1 + output(2, 2) * v2);
+	float prod = v1 * u1 + v2 * u2;
+	float z0 = u0 - (prod / (2 * rsq)) * v0;
+	float z1 = u1 - (prod / (2 * rsq)) * v1;
+	float z2 = u2 - (prod / (2 * rsq)) * v2;
+
+	output(2, 1) -= (v1 * z2 + v2 * z1);
+	output(1, 2) = output(2, 1);
+	output(2, 2) -= 2 * v2 * z2;
+
+	output(0, 2) = output(2, 0) = 0;
+
+	output(1, 0) -= v1 * z0;
+	output(0, 1) = output(1, 0);
+}
+
+/* QR algorithm for finding eigenvalues of 3x3 matrix
+ */
+__device__ int QRApply3x3(MatrixDevice input, int max_iterations, float tolerance, float *eigens, int offset)
+{
+	int k = 0;
+	float shift = 0;
+	int eig_count = 0;
+	int n = 3;
+
+	while (k < max_iterations) {
+		if (input(n - 1, n - 2) <= tolerance) {
+			eigens[eig_count * offset] = input(n - 1, n - 1) + shift;
+			eig_count++;
+			n--;
+		}
+
+		if (input(1, 1) <= tolerance) {
+			eigens[eig_count * offset] = input(0, 0) + shift;
+			eig_count++;
+			n--;
+			input(0, 0) = input(1, 1);
+		}
+
+		if (n < 0)
+			return -1;
+
+		if (n == 0) {
+			eigens[eig_count * offset] = input(0, 0) + shift;
+			return -1;
+		}
+		
+		float b = -(input(n - 2, n - 2) + input(n - 1, n - 1));
+		float c = input(n - 1, n - 1) * input(n - 2, n - 2) - input(n - 1, n - 2) * input(n - 1, n - 2);
+		float d = sqrtf(b * b - 4 * c);
+
+		float u1 = (b > 0) ? -2 * c / (b + d) : (d - b) / 2;
+		float u2 = (b > 0) ? -(b + d) / 2 : 2 * c / (d - b);
+
+		if (n == 1) {
+			eigens[eig_count * offset] = u1 + shift;
+			eig_count++;
+			eigens[eig_count * offset] = u2 + shift;
+			return -1;
+		}
+
+		float sigma = (fabsf(u1 - input(n - 1, n - 1)) < fabsf(u2 - input(n - 1, n - 1))) ? u1 : u2;
+
+		shift += sigma;
+
+		for (int j = 0; j < n; j++) {
+			d_tmp[j * offset] = input(j, j) - sigma;
+		}
+
+		x[0] = d_tmp[0];
+		y[0] = input(1, 0);
+
+		for (int j = 1; j < n; j++) {
+			z[(j - 1) * offset] = sqrtf(x[(j - 1) * offset] * x[(j - 1) * offset] + input(j, j - 1) * input(j, j - 1));
+
+			c_tmp[j * offset] = x[(j - 1) * offset] / z[(j - 1) * offset];
+			s_tmp[j * offset] = input(j, j - 1) / z[(j - 1) * offset];
+			q[(j - 1) * offset] = c_tmp[j * offset] * y[(j - 1) * offset] + s_tmp[j * offset] * d_tmp[j * offset];
+			x[j * offset] = -s_tmp[j * offset] * y[(j - 1) * offset] + c_tmp[j * offset] * d_tmp[j * offset];
+
+			if (j != n - 1) {
+				y[j * offset] = c_tmp[j * offset] * input(j + 1, j);
+			}
+		}
+
+		z[(n - 1) * offset] = x[(n - 1) * offset];
+
+		input(0, 0) = s_tmp[offset] * q[0] + c_tmp[offset] * z[0];
+		input(1, 0) = s_tmp[offset] * z[offset];
+
+		for (int j = 2; j < n - 1; j++) {
+			input(j, j) = s_tmp[(j + 1) * offset] * q[j * offset] + c_tmp[j * offset] * c[(j + 1) * offset] * z[j * offset];
+			input(j + 1, j) = s_tmp[(j + 1) * offset] * z[(j + 1) * offset];
+		}
+
+		input(n - 1, n - 1) = c_tmp[(n - 1) * offset] * z[(n - 1) * offset];
+		k++;
+	}
+}
+
+/* QR algorithm for finding eigenvalues of general matrix
+ * Return the recommended split (e.g. the index of the column
+ * by which the matrix can be splitted) or -1 if no such value
+ * exists.
+ */
+__device__ int QRApply(MatrixDevice input, int max_iterations, float tolerance, 
+						float *lambda, float *d_tmp, float *x, float *y, float *z, 
+						float *c_tmp, float *s_tmp, float *q, int offset)
+{
+	int k = 0; 
+	int shift = 0;
+	int n = input.rows();
+	int eigen_count = 0;
+
+	while (k < max_iterations) {
+		if (fabsf(input(n - 1, n - 2)) <= tolerance) {
+			lambda[eigen_count * offset] = input(n - 1, n - 1) + shift;
+			eigen_count++;
+			n -= 1;
+		}
+
+		if (input(2, 1) <= tolerance) {
+			lambda[eigen_count * offset] = input(0, 0) + shift;
+			eigen_count++;
+			n -= 1;
+			input(0, 0) = input(1, 1);
+
+			for (int j = 1; j < n; j++) {
+				input(j, j) = input(j + 1, j + 1);
+				input(j, j - 1) = input(j + 1, j);
+			}
+		}
+
+		if (n == 0)
+			return -1;
+
+		if (n == 1) {
+			lambda[eigen_count * offset] = input(0, 0) + shift;
+			return -1;
+		}
+
+		for (int j = 2; j < n - 1; j++) {
+			if (fabsf(input(j, j - 1)) <= tolerance) {
+				return j;
+			}
+		}
+
+		float b = -(input(n - 2, n - 2) + input(n - 1, n - 1));
+		float c = input(n - 1, n - 1) * input(n - 2, n - 2) - input(n - 1, n - 2) * input(n - 1, n - 2);
+		float d = sqrtf(b * b - 4 * c);
+
+		float u1 = (b > 0) ? -2 * c / (b + d) : (d - b) / 2;
+		float u2 = (b > 0) ? -(b + d) / 2 : 2 * c / (d - b);
+
+		if (n == 2) {
+			lambda[eigen_count * offset] = u1 + shift;
+			eigen_count++;
+			lambda[eigen_count * offset] = u2 + shift;
+			return -1;
+		}
+
+		float sigma = (fabsf(u1 - input(n - 1, n - 1)) < fabsf(u2 - input(n - 1, n - 1))) ? u1 : u2;
+
+		shift += sigma;
+
+		for (int j = 0; j < n; j++) {
+			d_tmp[j * offset] = input(j, j) - sigma;
+		}
+
+		x[0] = d_tmp[0];
+		y[0] = input(1, 0);
+
+		for (int j = 1; j < n; j++) {
+			z[(j - 1) * offset] = sqrtf(x[(j - 1) * offset] * x[(j - 1) * offset] + input(j, j - 1) * input(j, j - 1));
+
+			c_tmp[j * offset] = x[(j - 1) * offset] / z[(j - 1) * offset];
+			s_tmp[j * offset] = input(j, j - 1) / z[(j - 1) * offset];
+			q[(j - 1) * offset] = c_tmp[j * offset] * y[(j - 1) * offset] + s_tmp[j * offset] * d_tmp[j * offset];
+			x[j * offset] = -s_tmp[j * offset] * y[(j - 1) * offset] + c_tmp[j * offset] * d_tmp[j * offset];
+
+			if (j != n - 1) {
+				y[j * offset] = c_tmp[j * offset] * input(j + 1, j);
+			}
+		}
+
+		z[(n - 1) * offset] = x[(n - 1) * offset];
+
+		input(0, 0) = s_tmp[offset] * q[0] + c_tmp[offset] * z[0];
+		input(1, 0) = s_tmp[offset] * z[offset];
+
+		for (int j = 2; j < n - 1; j++) {
+			input(j, j) = s_tmp[(j + 1) * offset] * q[j * offset] + c_tmp[j * offset] * c[(j + 1) * offset] * z[j * offset];
+			input(j + 1, j) = s_tmp[(j + 1) * offset] * z[(j + 1) * offset];
+		}
+
+		input(n - 1, n - 1) = c_tmp[(n - 1) * offset] * z[(n - 1) * offset];
+		k++;
+	}
+}
+
 /* Second pass: update coordinate mean (centroid) and 
  * covariance matrix of each cell
- *
  */
 extern "C" __global__ void updateVoxelCentroid(GOctreeNode *voxel_grid, int vgrid_x, int vgrid_y, int vgrid_z)
 {

@@ -30,6 +30,12 @@ public:
 		return buffer_;
 	}
 
+	//Need to fix. Only reducing rows is OK now.
+	CUDAH void resize(int rows, int cols) {
+		rows_ = rows;
+		cols_ = cols;
+	}
+
 	CUDAH float *cellAddr(int row, int col) {
 		if (row >= rows_ || col >= cols_ || row < 0 || col < 0)
 			return NULL;
