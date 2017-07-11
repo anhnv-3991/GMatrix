@@ -1,7 +1,6 @@
 #include "octree.h"
 #include "../debug.h"
 #include "../common.h"
-#include <device_functions.h>
 #include <math.h>
 #include <limits>
 
@@ -257,98 +256,12 @@ __device__ void tridiagonalize3x3(MatrixDevice input, MatrixDevice output)
 	output(0, 1) = output(1, 0);
 }
 
-/* QR algorithm for finding eigenvalues of 3x3 matrix
- */
-__device__ int QRApply3x3(MatrixDevice input, int max_iterations, float tolerance, float *eigens, int offset)
-{
-	int k = 0;
-	float shift = 0;
-	int eig_count = 0;
-	int n = 3;
-
-	while (k < max_iterations) {
-		if (input(n - 1, n - 2) <= tolerance) {
-			eigens[eig_count * offset] = input(n - 1, n - 1) + shift;
-			eig_count++;
-			n--;
-		}
-
-		if (input(1, 1) <= tolerance) {
-			eigens[eig_count * offset] = input(0, 0) + shift;
-			eig_count++;
-			n--;
-			input(0, 0) = input(1, 1);
-		}
-
-		if (n < 0)
-			return -1;
-
-		if (n == 0) {
-			eigens[eig_count * offset] = input(0, 0) + shift;
-			return -1;
-		}
-		
-		float b = -(input(n - 2, n - 2) + input(n - 1, n - 1));
-		float c = input(n - 1, n - 1) * input(n - 2, n - 2) - input(n - 1, n - 2) * input(n - 1, n - 2);
-		float d = sqrtf(b * b - 4 * c);
-
-		float u1 = (b > 0) ? -2 * c / (b + d) : (d - b) / 2;
-		float u2 = (b > 0) ? -(b + d) / 2 : 2 * c / (d - b);
-
-		if (n == 1) {
-			eigens[eig_count * offset] = u1 + shift;
-			eig_count++;
-			eigens[eig_count * offset] = u2 + shift;
-			return -1;
-		}
-
-		float sigma = (fabsf(u1 - input(n - 1, n - 1)) < fabsf(u2 - input(n - 1, n - 1))) ? u1 : u2;
-
-		shift += sigma;
-
-		for (int j = 0; j < n; j++) {
-			d_tmp[j * offset] = input(j, j) - sigma;
-		}
-
-		x[0] = d_tmp[0];
-		y[0] = input(1, 0);
-
-		for (int j = 1; j < n; j++) {
-			z[(j - 1) * offset] = sqrtf(x[(j - 1) * offset] * x[(j - 1) * offset] + input(j, j - 1) * input(j, j - 1));
-
-			c_tmp[j * offset] = x[(j - 1) * offset] / z[(j - 1) * offset];
-			s_tmp[j * offset] = input(j, j - 1) / z[(j - 1) * offset];
-			q[(j - 1) * offset] = c_tmp[j * offset] * y[(j - 1) * offset] + s_tmp[j * offset] * d_tmp[j * offset];
-			x[j * offset] = -s_tmp[j * offset] * y[(j - 1) * offset] + c_tmp[j * offset] * d_tmp[j * offset];
-
-			if (j != n - 1) {
-				y[j * offset] = c_tmp[j * offset] * input(j + 1, j);
-			}
-		}
-
-		z[(n - 1) * offset] = x[(n - 1) * offset];
-
-		input(0, 0) = s_tmp[offset] * q[0] + c_tmp[offset] * z[0];
-		input(1, 0) = s_tmp[offset] * z[offset];
-
-		for (int j = 2; j < n - 1; j++) {
-			input(j, j) = s_tmp[(j + 1) * offset] * q[j * offset] + c_tmp[j * offset] * c[(j + 1) * offset] * z[j * offset];
-			input(j + 1, j) = s_tmp[(j + 1) * offset] * z[(j + 1) * offset];
-		}
-
-		input(n - 1, n - 1) = c_tmp[(n - 1) * offset] * z[(n - 1) * offset];
-		k++;
-	}
-}
-
 /* QR algorithm for finding eigenvalues of general matrix
  * Return the recommended split (e.g. the index of the column
  * by which the matrix can be splitted) or -1 if no such value
  * exists.
  */
-__device__ int QRApply(MatrixDevice input, int max_iterations, float tolerance, 
-						float *lambda, float *d_tmp, float *x, float *y, float *z, 
-						float *c_tmp, float *s_tmp, float *q, int offset)
+__device__ int QRApply(MatrixDevice input, int max_iterations, float tolerance, float *lambda, int offset)
 {
 	int k = 0; 
 	int shift = 0;
@@ -359,16 +272,16 @@ __device__ int QRApply(MatrixDevice input, int max_iterations, float tolerance,
 		if (fabsf(input(n - 1, n - 2)) <= tolerance) {
 			lambda[eigen_count * offset] = input(n - 1, n - 1) + shift;
 			eigen_count++;
-			n -= 1;
+			n--;
 		}
 
-		if (input(2, 1) <= tolerance) {
+		if (input(1, 0) <= tolerance) {
 			lambda[eigen_count * offset] = input(0, 0) + shift;
 			eigen_count++;
-			n -= 1;
+			n--;
 			input(0, 0) = input(1, 1);
 
-			for (int j = 1; j < n; j++) {
+			for (int j = 1; j < n - 1; j++) {
 				input(j, j) = input(j + 1, j + 1);
 				input(j, j - 1) = input(j + 1, j);
 			}
@@ -406,39 +319,41 @@ __device__ int QRApply(MatrixDevice input, int max_iterations, float tolerance,
 
 		shift += sigma;
 
-		for (int j = 0; j < n; j++) {
-			d_tmp[j * offset] = input(j, j) - sigma;
-		}
+		float x = input(0, 0) - sigma;
+		float y = input(1, 0);
+		float z, old_z;
+		float co, si, q, old_co, old_si;
 
-		x[0] = d_tmp[0];
-		y[0] = input(1, 0);
+		//Calculate a0
+		z = sqrtf(x * x + input(1, 0) * input(1, 0));	//z0
+		co = x / z;										//c1
+		si = input(1, 0) / z;							//sigma1
+		q = co * y + si * (input(1, 1) - sigma);		//q0
 
-		for (int j = 1; j < n; j++) {
-			z[(j - 1) * offset] = sqrtf(x[(j - 1) * offset] * x[(j - 1) * offset] + input(j, j - 1) * input(j, j - 1));
-
-			c_tmp[j * offset] = x[(j - 1) * offset] / z[(j - 1) * offset];
-			s_tmp[j * offset] = input(j, j - 1) / z[(j - 1) * offset];
-			q[(j - 1) * offset] = c_tmp[j * offset] * y[(j - 1) * offset] + s_tmp[j * offset] * d_tmp[j * offset];
-			x[j * offset] = -s_tmp[j * offset] * y[(j - 1) * offset] + c_tmp[j * offset] * d_tmp[j * offset];
-
-			if (j != n - 1) {
-				y[j * offset] = c_tmp[j * offset] * input(j + 1, j);
-			}
-		}
-
-		z[(n - 1) * offset] = x[(n - 1) * offset];
-
-		input(0, 0) = s_tmp[offset] * q[0] + c_tmp[offset] * z[0];
-		input(1, 0) = s_tmp[offset] * z[offset];
+		input(0, 0) = si * q + co * z;					//a0 = sigma1 * q0 + c1 * z0
 
 		for (int j = 2; j < n - 1; j++) {
-			input(j, j) = s_tmp[(j + 1) * offset] * q[j * offset] + c_tmp[j * offset] * c[(j + 1) * offset] * z[j * offset];
-			input(j + 1, j) = s_tmp[(j + 1) * offset] * z[(j + 1) * offset];
+			old_co = co;											//c(j - 1)
+			old_si = si;											//sigma(j - 1)
+			z = sqrtf(x * x + input(j, j - 1) * input(j, j - 1));	//z(j - 1)
+			co = x / z;												//c(j)
+			si = input(j, j - 1) / z;								//sigma(j)
+			q = co * y + si * (input(j, j) - sigma);				//q(j - 1)
+
+			input(j - 1, j - 1) = si * q + old_co * co * z;			//a(j - 1) = sigma(j) * q(j - 1) + c(j) * c(j - 1) * z(j - 1)
+			input(j - 1, j - 2) = old_si * z;						//b(j - 1) = sigma(j - 1) * z(j - 1);
+
+			x = -si * y + co * (input(j, j) - sigma);
+			y = co * input(j + 1, j);
 		}
 
-		input(n - 1, n - 1) = c_tmp[(n - 1) * offset] * z[(n - 1) * offset];
+		//Calculate an
+		input(n - 1, n - 1) = co * x;
+
 		k++;
 	}
+
+	return -1;
 }
 
 /* Second pass: update coordinate mean (centroid) and 
