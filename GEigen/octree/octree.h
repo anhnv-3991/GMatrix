@@ -54,6 +54,8 @@ public:
 
 	CUDAH MatrixDevice& covariance() { return cov_; }
 	
+	CUDAH MatrixDevice& inverseCovariance() { return icov_; }
+
 	CUDAH float sizeXY() { return max_xy_ - min_xy_; }
 	CUDAH float sizeYZ() { return max_yz_ - min_yz_; }
 	CUDAH float sizeZX() { return max_zx_ - min_zx_; }
@@ -85,6 +87,7 @@ protected:
 	int level_;
 	MatrixDevice cov_;
 	MatrixDevice centroid_;
+	MatrixDevice icov_;
 };
 
 class GOctree {

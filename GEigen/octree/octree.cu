@@ -3,6 +3,7 @@
 #include "../common.h"
 #include <math.h>
 #include <limits>
+#include <eigen3/Eigen/Eigenvalues>
 
 namespace gpu {
 
@@ -98,9 +99,9 @@ extern "C" __global__ void initNonLeafGrid(GOctreeNode *voxel_grid, int vgrid_x,
 }
 
 __device__ int voxelId(float x, float y, float z,
-	float voxel_x, float voxel_y, float voxel_z,
-	int min_b_x, int min_b_y, int min_b_z,
-	int vgrid_x, int vgrid_y, int vgrid_z)
+						float voxel_x, float voxel_y, float voxel_z,
+						int min_b_x, int min_b_y, int min_b_z,
+						int vgrid_x, int vgrid_y, int vgrid_z)
 {
 	int id_x = static_cast<int>(floor(x / voxel_x) - static_cast<float>(min_b_x));
 	int id_y = static_cast<int>(floor(y / voxel_y) - static_cast<float>(min_b_y));
@@ -150,211 +151,6 @@ extern "C" __global__ void insertPoints(float *x, float *y, float *z, int points
 	}
 }
 
-__device__ void tridiagonalize(MatrixDevice input, MatrixDevice output, float *u, float *v, float *z, int offset)
-{
-	for (int i = 0; i < input.rows(); i++) {
-		for (int j = 0; j < input.cols(); i++) {
-			output(i, j) = input(i, j);
-		}
-	}
-
-	int size = input.rows();
-
-	for (int k = 0; k < size - 2; k++) {
-		float q = 0;
-
-		for (int j = k + 1; j < size; j++) {
-			q += output(j, k) * output(j, k);
-		}
-
-		float alpha;
-
-		alpha = (output(k + 1, k) == 0) ? -sqrtf(q) : -(sqrt(q) * output(k + 1, k) / fabsf(output(k + 1, k)));
-
-		float rsq = alpha * alpha - alpha * output(k + 1, k);
-
-		v[k * offset] = 0;
-		v[(k + 1) * offset] = output(k + 1, k) - alpha;
-
-		for (int j = k + 2; j < size; j++) {
-			v[j * offset] = output(j, k);
-		}
-
-		for (int j = k; j < size; j++) {
-			float u_tmp = 0;
-
-			for (int i = k + 1; i < size; i++) {
-				u_tmp += output(j, i) * v[i * offset];
-			}
-
-			u[j * offset] = u_tmp / rsq;
-		}
-
-		float prod = 0;
-
-		for (int i = k + 1; i < size; i++) {
-			prod += v[i * offset] * u[i * offset];
-		}
-
-		for (int j = k; j < size; j++) {
-			z[j * offset] = u[j * offset] - (prod / (2 * rsq)) * v[j * offset];
-		}
-
-		for (int l = k + 1; l < size - 1; l++) {
-			for (int j = l + 1; j < size; j++) {
-				output(j, l) -= (v[l * offset] * z[j * offset] + v[j * offset] * z[l * offset]);
-				output(l, j) = output(j, l);
-			}
-
-			output(l, l) -= 2 * v[l * offset] * z[l * offset];
-		}
-
-		output(size - 1, size - 1) -= 2 * v[(size - 1) * offset] * z[(size - 1) * offset];
-
-		for (int j = k + 2; j < size; j++) {
-			output(k, j) = output(j, k) = 0;
-		}
-
-		output(k + 1, k) -= v[(k + 1) * offset] * z[k * offset];
-		output(k, k + 1) = output(k + 1, k);
-	}
-}
-
-__device__ void tridiagonalize3x3(MatrixDevice input, MatrixDevice output)
-{
-	output(0, 0) = input(0, 0);
-	output(0, 1) = input(0, 1);
-	output(0, 2) = input(0, 2);
-	output(1, 0) = input(1, 0);
-	output(1, 1) = input(1, 1);
-	output(1, 2) = input(1, 2);
-	output(2, 0) = input(2, 0);
-	output(2, 1) = input(2, 1);
-	output(2, 2) = input(2, 2);
-
-	float q = output(1, 0) * output(1, 0) + output(2, 0) * output(2, 0);
-	float alpha = (output(1, 0) == 0) ? -sqrtf(q) : -(sqrtf(q) * output(1, 0) / fabsf(output(1, 0)));
-	float rsq = alpha * alpha - alpha * output(1, 0);
-	float v0 = 0;
-	float v1 = output(1, 0) - alpha;
-	float v2 = output(2, 0);
-	float u0 = (1 / rsq) * (output(0, 1) * v1 + output(0, 2) * v2);
-	float u1 = (1 / rsq) * (output(1, 1) * v1 + output(1, 2) * v2);
-	float u2 = (1 / rsq) * (output(2, 1) * v1 + output(2, 2) * v2);
-	float prod = v1 * u1 + v2 * u2;
-	float z0 = u0 - (prod / (2 * rsq)) * v0;
-	float z1 = u1 - (prod / (2 * rsq)) * v1;
-	float z2 = u2 - (prod / (2 * rsq)) * v2;
-
-	output(2, 1) -= (v1 * z2 + v2 * z1);
-	output(1, 2) = output(2, 1);
-	output(2, 2) -= 2 * v2 * z2;
-
-	output(0, 2) = output(2, 0) = 0;
-
-	output(1, 0) -= v1 * z0;
-	output(0, 1) = output(1, 0);
-}
-
-/* QR algorithm for finding eigenvalues of general matrix
- * Return the recommended split (e.g. the index of the column
- * by which the matrix can be splitted) or -1 if no such value
- * exists.
- */
-__device__ int QRApply(MatrixDevice input, int max_iterations, float tolerance, float *lambda, int offset)
-{
-	int k = 0; 
-	int shift = 0;
-	int n = input.rows();
-	int eigen_count = 0;
-
-	while (k < max_iterations) {
-		if (fabsf(input(n - 1, n - 2)) <= tolerance) {
-			lambda[eigen_count * offset] = input(n - 1, n - 1) + shift;
-			eigen_count++;
-			n--;
-		}
-
-		if (input(1, 0) <= tolerance) {
-			lambda[eigen_count * offset] = input(0, 0) + shift;
-			eigen_count++;
-			n--;
-			input(0, 0) = input(1, 1);
-
-			for (int j = 1; j < n - 1; j++) {
-				input(j, j) = input(j + 1, j + 1);
-				input(j, j - 1) = input(j + 1, j);
-			}
-		}
-
-		if (n == 0)
-			return -1;
-
-		if (n == 1) {
-			lambda[eigen_count * offset] = input(0, 0) + shift;
-			return -1;
-		}
-
-		for (int j = 2; j < n - 1; j++) {
-			if (fabsf(input(j, j - 1)) <= tolerance) {
-				return j;
-			}
-		}
-
-		float b = -(input(n - 2, n - 2) + input(n - 1, n - 1));
-		float c = input(n - 1, n - 1) * input(n - 2, n - 2) - input(n - 1, n - 2) * input(n - 1, n - 2);
-		float d = sqrtf(b * b - 4 * c);
-
-		float u1 = (b > 0) ? -2 * c / (b + d) : (d - b) / 2;
-		float u2 = (b > 0) ? -(b + d) / 2 : 2 * c / (d - b);
-
-		if (n == 2) {
-			lambda[eigen_count * offset] = u1 + shift;
-			eigen_count++;
-			lambda[eigen_count * offset] = u2 + shift;
-			return -1;
-		}
-
-		float sigma = (fabsf(u1 - input(n - 1, n - 1)) < fabsf(u2 - input(n - 1, n - 1))) ? u1 : u2;
-
-		shift += sigma;
-
-		float x = input(0, 0) - sigma;
-		float y = input(1, 0);
-		float z, old_z;
-		float co, si, q, old_co, old_si;
-
-		//Calculate a0
-		z = sqrtf(x * x + input(1, 0) * input(1, 0));	//z0
-		co = x / z;										//c1
-		si = input(1, 0) / z;							//sigma1
-		q = co * y + si * (input(1, 1) - sigma);		//q0
-
-		input(0, 0) = si * q + co * z;					//a0 = sigma1 * q0 + c1 * z0
-
-		for (int j = 2; j < n - 1; j++) {
-			old_co = co;											//c(j - 1)
-			old_si = si;											//sigma(j - 1)
-			z = sqrtf(x * x + input(j, j - 1) * input(j, j - 1));	//z(j - 1)
-			co = x / z;												//c(j)
-			si = input(j, j - 1) / z;								//sigma(j)
-			q = co * y + si * (input(j, j) - sigma);				//q(j - 1)
-
-			input(j - 1, j - 1) = si * q + old_co * co * z;			//a(j - 1) = sigma(j) * q(j - 1) + c(j) * c(j - 1) * z(j - 1)
-			input(j - 1, j - 2) = old_si * z;						//b(j - 1) = sigma(j - 1) * z(j - 1);
-
-			x = -si * y + co * (input(j, j) - sigma);
-			y = co * input(j + 1, j);
-		}
-
-		//Calculate an
-		input(n - 1, n - 1) = co * x;
-
-		k++;
-	}
-
-	return -1;
-}
 
 /* Second pass: update coordinate mean (centroid) and 
  * covariance matrix of each cell
@@ -372,6 +168,7 @@ extern "C" __global__ void updateVoxelCentroid(GOctreeNode *voxel_grid, int vgri
 		
 		MatrixDevice centr = voxel_grid[vgrid_id].centroid();
 		MatrixDevice cov = voxel_grid[vgrid_id].covariance();
+		MatrixDevice icov = voxel_grid[vgrid_id].inverseCovariance();
 
 		centr /= points_num;
 		cov /= points_num;
@@ -384,6 +181,65 @@ extern "C" __global__ void updateVoxelCentroid(GOctreeNode *voxel_grid, int vgri
 		cov(2, 0) = cov(0, 2);
 		cov(2, 1) = cov(1, 2);
 		cov(2, 2) -= centr(2) * centr(2);
+
+		Eigen::SelfAdjointEigenSolver<Eigen::Matrix3d> eigensolver;
+		Eigen::Matrix3d eigen_val;
+		Eigen::Vector3d pt_sum;
+		Eigen::Matrix3d cov_mat;
+		Eigen::Matrix3d eigen_vectors;
+		Eigen::Matrix3d cov_mat_inverse;
+
+		cov_mat(0, 0) = cov(0, 0);
+		cov_mat(0, 1) = cov(0, 1);
+		cov_mat(0, 2) = cov(0, 2);
+		cov_mat(1, 0) = cov(1, 0);
+		cov_mat(1, 1) = cov(1, 1);
+		cov_mat(1, 2) = cov(1, 2);
+		cov_mat(2, 0) = cov(2, 0);
+		cov_mat(2, 1) = cov(2, 1);
+		cov_mat(2, 2) = cov(2, 2);
+
+		eigensolver.compute(cov_mat);
+		eigen_val = eigensolver.eigenvalues().asDiagonal();
+		eigen_vectors = eigensolver.eigenvectors();
+
+		if (eigen_val(0,0) < 0 || eigen_val(1, 1) < 0 || eigen_val(2, 2) <= 0) {
+			node->pointNum() = -1;
+			return;
+		}
+
+		float min_eigen_val = eigen_val(2, 2) / 100;
+
+		if (eigen_val(0, 0) < min_eigen_val) {
+			eigen_val(0, 0) = min_eigen_val;
+
+			if (eigen_val(1, 1) < min_eigen_val)
+				eigen_val(1, 1) = min_eigen_val;
+
+			cov_mat = eigen_vectors * eigen_val * eigen_vectors.inverse();
+		}
+
+		cov_mat_inverse = cov_mat.inverse();
+
+		cov(0, 0) = cov_mat(0, 0);
+		cov(0, 1) = cov_mat(0, 1);
+		cov(0, 2) = cov_mat(0, 2);
+		cov(1, 0) = cov_mat(1, 0);
+		cov(1, 1) = cov_mat(1, 1);
+		cov(1, 2) = cov_mat(1, 2);
+		cov(2, 0) = cov_mat(2, 0);
+		cov(2, 1) = cov_mat(2, 1);
+		cov(2, 2) = cov_mat(2, 2);
+
+		icov(0, 0) = cov_mat_inverse(0, 0);
+		icov(0, 1) = cov_mat_inverse(0, 1);
+		icov(0, 2) = cov_mat_inverse(0, 2);
+		icov(1, 0) = cov_mat_inverse(1, 0);
+		icov(1, 1) = cov_mat_inverse(1, 1);
+		icov(1, 2) = cov_mat_inverse(1, 2);
+		icov(2, 0) = cov_mat_inverse(2, 0);
+		icov(2, 1) = cov_mat_inverse(2, 1);
+		icov(2, 2) = cov_mat_inverse(2, 2);
 	}
 }
 
@@ -517,5 +373,179 @@ void GOctree::findBoundaries()
 	vgrid_y_ = max_b_y_ - min_b_y_ + 1;
 	vgrid_z_ = max_b_z_ - min_b_z_ + 1;
 }
+
+__device__ float squareDistance(float x, float y, float z, float a, float b, float c)
+{
+	return (x - a) * (x - a) + (y - b) * (y - b) + (z - c) * (z - c);
+}
+
+
+extern "C" __global__ void radiusSearch(float *x, float *y, float *z, int radius, int max_nn, int points_num,
+											GOctreeNode *grid, int vgrid_x, int vgrid_y, int vgrid_z,
+											float voxel_x, float voxel_y, float voxel_z,
+											int min_b_x, int min_b_y, int min_b_z,
+											int max_b_x, int max_b_y, int max_b_z,
+											float max_x, float max_y, float max_z,
+											float min_x, float min_y, float min_z,
+											MatrixDevice *point_gradients, MatrixDevice *point_hessians,
+											MatrixDevice j_ang_a, MatrixDevice j_ang_b, MatrixDevice j_ang_c, MatrixDevice j_ang_d,
+											MatrixDevice j_ang_e, MatrixDevice j_ang_f, MatrixDevice j_ang_g, MatrixDevice j_ang_h,
+											MatrixDevice h_ang_a2_, MatrixDevice h_ang_a3_, MatrixDevice h_ang_b2_, MatrixDevice h_ang_b3_, MatrixDevice h_ang_c2_,
+											MatrixDevice h_ang_c3_, MatrixDevice h_ang_d1_, MatrixDevice h_ang_d2_, MatrixDevice h_ang_d3_, MatrixDevice h_ang_e1_,
+											MatrixDevice h_ang_e2_, MatrixDevice h_ang_e3_, MatrixDevice h_ang_f1_, MatrixDevice h_ang_f2_, MatrixDevice h_ang_f3_,
+											float gauss_d1, float gauss_d2)
+{
+	int id = threadIdx.x + blockIdx.x * blockDim.x;
+	int stride = blockDim.x * gridDim.x;
+
+	for (int i = id; i < points_num; i += stride) {
+		float t_x = x[i];
+		float t_y = y[i];
+		float t_z = z[i];
+
+		int id_x = static_cast<int>(floor(x / voxel_x) - static_cast<float>(min_b_x));
+		int id_y = static_cast<int>(floor(y / voxel_y) - static_cast<float>(min_b_y));
+		int id_z = static_cast<int>(floor(z / voxel_z) - static_cast<float>(min_b_z));
+
+		int max_id_x = static_cast<int>(ceilf((t_x + radius) / voxel_x) - static_cast<float>(min_b_x));
+		int max_id_y = static_cast<int>(ceilf((t_y + radius) / voxel_y) - static_cast<float>(min_b_y));
+		int max_id_z = static_cast<int>(ceilf((t_z + radius) / voxel_z) - static_cast<float>(min_b_z));
+
+		int min_id_x = static_cast<int>(ceilf((t_x - radius) / voxel_x) - static_cast<float>(min_b_x));
+		int min_id_y = static_cast<int>(ceilf((t_y - radius) / voxel_y) - static_cast<float>(min_b_y));
+		int min_id_z = static_cast<int>(ceilf((t_z - radius) / voxel_z) - static_cast<float>(min_b_z));
+
+		max_id_x = (max_id_x > max_b_x) ? max_b_x : max_id_x;
+		max_id_y = (max_id_y > max_b_y) ? max_b_y : max_id_y;
+		max_id_z = (max_id_z > max_b_z) ? max_b_z : max_id_z;
+
+		min_id_x = (min_id_x < min_b_x) ? min_b_x : min_id_x;
+		min_id_y = (min_id_y < min_b_y) ? min_b_y : min_id_y;
+		min_id_z = (min_id_z < min_b_z) ? min_b_z : min_id_z;
+
+		MatrixDevice g = point_gradients[i];
+		MatrixDevice H = point_hessians[i];
+		int nn = 0;
+
+		for (int j = min_id_x; j <= max_id_x && nn < max_nn; j++) {
+			for (int k = min_id_y; k <= max_id_y && nn < max_nn; k++) {
+				for (int l = min_id_z; l <= max_id_z && nn < max_nn; l++) {
+					int voxel_id = j + k * vgrid_x + l * vgrid_x * vgrid_y;
+					GOctreeNode *voxel = grid[voxel_id];
+
+					if (voxel->pointNum() > 0) {
+						MatrixDevice centroid = voxel->centroid();
+
+						if (squareDistance(centroid(0), centroid(1), centroid(2), t_x, t_y, t_z) <= radius * radius) {
+							nn++;
+
+							g(1, 3) = t_x * j_ang_a(0) + t_y * j_ang_a(1) + t_z * t_ang_a(2);
+							g(2, 3) = t_x * j_ang_b(0) + t_y * j_ang_b(1) + t_z * t_ang_b(2);
+							g(0, 4) = t_x * j_ang_c(0) + t_y * j_ang_c(1) + t_z * j_ang_c(2);
+							g(1, 4) = t_x * j_ang_d(0) + t_y * j_ang_d(1) + t_z * j_ang_d(2);
+							g(2, 4) = t_x * j_ang_e(0) + t_y * j_ang_e(1) + t_z * j_ang_e(2);
+							g(0, 5) = t_x * j_ang_f(0) + t_y * j_ang_f(1) + t_z * j_ang_f(2);
+							g(1, 5) = t_x * j_ang_g(0) + t_y * j_ang_g(1) + t_z * j_ang_g(2);
+							g(2, 5) = t_x * j_ang_h(0) + t_y * j_ang_h(1) + t_z * j_ang_h(2);
+
+							H(9, 3) = 0;
+							H(10, 3) = t_x * h_ang_a2(0) + t_y * h_ang_a2(1) + t_z * h_ang_a2(2);
+							H(11, 3) = t_x * h_ang_a3(0) + t_y * h_ang_a3(1) + t_z * h_ang_a3(2);
+
+							H(12, 3) = H(9, 4) = 0;
+							H(13, 3) = H(10, 4) = t_x * h_ang_b2(0) + t_y * h_ang_b2(1) + t_z * h_ang_b2(2);
+							H(14, 3) = H(11, 4) = t_x * h_ang_b3(0) + t_y * h_ang_b3(1) + t_z * h_ang_b3(2);
+
+							H(15, 3) = 0;
+							H(16, 3) = H(9, 5) = t_x * h_ang_c2(0) + t_y * h_ang_c2(1) + t_z * h_ang_c2(2);
+							H(17, 3) = H(10, 5) = t_x * h_ang_c3(0) + t_y * h_ang_c3(1) + t_z * h_ang_c3(2);
+
+							H(12, 4) = t_x * h_ang_d1(0) + t_y * h_ang_d1(1) + t_z * h_ang_d1(2);
+							H(13, 4) = t_x * h_ang_d2(0) + t_y * h_ang_d2(1) + t_z * h_ang_d2(2);
+							H(14, 4) = t_x * h_ang_d3(0) + t_y * h_ang_d3(1) + t_z * h_ang_d3(2);
+
+							H(15, 4) = H(12, 5) = t_x * h_ang_e1(0) + t_y * h_ang_e1(1) + t_z * h_ang_e1(2);
+							H(16, 4) = H(13, 5) = t_x * h_ang_e2(0) + t_y * h_ang_e2(1) + t_z * h_ang_e2(2);
+							H(17, 4) = H(14, 5) = t_x * h_ang_e3(0) + t_y * h_ang_e3(1) + t_z * h_ang_e3(2);
+
+							H(15, 5) = t_x * h_ang_f1(0) + t_y * h_ang_f1(1) + t_z * h_ang_f1(2);
+							H(16, 5) = t_x * h_ang_f2(0) + t_y * h_ang_f2(1) + t_z * h_ang_f2(2);
+							H(17, 5) = t_x * h_ang_f3(0) + t_y * h_ang_f3(1) + t_z * h_ang_f3(2);
+
+							MatrixDevice icov = voxel->inverseCovariance();
+
+							float cov_dxd_pi_x, cov_dxd_pi_y, cov_dxd_pi_z;
+
+							t_x -= centroid(0);
+							t_y -= centroid(1);
+							t_z -= centroid(2);
+
+							double e_x_cov_x = expf(-gauss_d2 * ((t_x * icov(0, 0) + t_y * icov(1, 0) + t_z * icov(2, 0)) * t_x
+																+ ((t_x * icov(0, 1) + t_y * icov(1, 1) + t_z * icov(2, 1)) * t_y)
+																+ ((t_x * icov(0, 2) + t_y * icov(1, 2) + t_z * icov(2, 2)) * t_z)) / 2);
+							double score_inc = -gauss_d1 * e_x_cov_x;
+
+							e_x_cov_x *= gauss_d2;
+
+							e_x_cov_x *= gauss_d1;
+
+
+
+
+							  Eigen::Vector3d cov_dxd_pi;
+							  // e^(-d_2/2 * (x_k - mu_k)^T Sigma_k^-1 (x_k - mu_k)) Equation 6.9 [Magnusson 2009]
+							  double e_x_cov_x = exp (-gauss_d2_ * x_trans.dot (c_inv * x_trans) / 2);
+							  // Calculate probability of transtormed points existance, Equation 6.9 [Magnusson 2009]
+							  double score_inc = -gauss_d1_ * e_x_cov_x;
+
+							  e_x_cov_x = gauss_d2_ * e_x_cov_x;
+
+							  // Error checking for invalid values.
+							  if (e_x_cov_x > 1 || e_x_cov_x < 0 || e_x_cov_x != e_x_cov_x)
+							    return (0);
+
+							  // Reusable portion of Equation 6.12 and 6.13 [Magnusson 2009]
+							  e_x_cov_x *= gauss_d1_;
+
+
+							  for (int i = 0; i < 6; i++)
+							  {
+							    // Sigma_k^-1 d(T(x,p))/dpi, Reusable portion of Equation 6.12 and 6.13 [Magnusson 2009]
+							    cov_dxd_pi = c_inv * point_gradient_.col (i);
+
+							    // Update gradient, Equation 6.12 [Magnusson 2009]
+							    score_gradient (i) += x_trans.dot (cov_dxd_pi) * e_x_cov_x;
+
+							    if (compute_hessian)
+							    {
+							      for (int j = 0; j < hessian.cols (); j++)
+							      {
+							        // Update hessian, Equation 6.13 [Magnusson 2009]
+							        hessian (i, j) += e_x_cov_x * (-gauss_d2_ * x_trans.dot (cov_dxd_pi) * x_trans.dot (c_inv * point_gradient_.col (j)) +
+							                                    x_trans.dot (c_inv * point_hessian_.block<3, 1>(3 * i, j)) +
+							                                    point_gradient_.col (j).dot (cov_dxd_pi) );
+							      }
+							    }
+							  }
+
+							  return (score_inc);
+						}
+					}
+				}
+			}
+		}
+
+		int voxel_id = voxelId(t_x, t_y, t_z, voxel_x, voxel_y, voxel_z, min_b_x, min_b_y, min_b_z, vgrid_x, vgrid_y, vgrid_z);
+
+
+
+		int id_x = static_cast<int>(floor(x / voxel_x) - static_cast<float>(min_b_x));
+		int id_y = static_cast<int>(floor(y / voxel_y) - static_cast<float>(min_b_y));
+		int id_z = static_cast<int>(floor(z / voxel_z) - static_cast<float>(min_b_z));
+
+		return (id_x + id_y * vgrid_x + id_z * vgrid_x * vgrid_y);
+
+		int
+	}
 
 }
