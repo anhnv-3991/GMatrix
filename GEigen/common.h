@@ -7,4 +7,7 @@
 #define CUDAH __forceinline__ __host__ __device__
 #define BLOCK_SIZE_X 1024
 
+#define BLOCK_X 16
+#define BLOCK_Y 16
+#define BLOCK_Z 4
 #endif

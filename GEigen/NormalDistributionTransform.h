@@ -5,6 +5,7 @@
 #include <cuda_runtime.h>
 #include "Registration.h"
 #include "common.h"
+#include "VoxelGrid/VoxelGrid.h"
 
 namespace gpu {
 class GNormalDistributionTransform: protected GRegistration {
@@ -27,6 +28,14 @@ private:
 
 	MatrixHost h_ang_a2_, h_ang_a3_, h_ang_b2_, h_ang_b3_, h_ang_c2_, h_ang_c3_, h_ang_d1_, h_ang_d2_, h_ang_d3_,
 				h_ang_e1_, h_ang_e2_, h_ang_e3_, h_ang_f1_, h_ang_f2_, h_ang_f3_;
+
+
+	MatrixDevice dj_ang_a_, dj_ang_b_, dj_ang_c_, dj_ang_d_, dj_ang_e_, dj_ang_f_, dj_ang_g_, dj_ang_h_;
+
+	MatrixDevice dh_ang_a2_, dh_ang_a3_, dh_ang_b2_, dh_ang_b3_, dh_ang_c2_, dh_ang_c3_, dh_ang_d1_, dh_ang_d2_, dh_ang_d3_,
+				dh_ang_e1_, dh_ang_e2_, dh_ang_e3_, dh_ang_f1_, dh_ang_f2_, dh_ang_f3_;
+
+	GVoxelGrid voxel_grid_;
 };
 }
 

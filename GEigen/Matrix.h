@@ -30,6 +30,11 @@ public:
 		return buffer_;
 	}
 
+	CUDAH void setRows(int rows) { rows_ = rows; }
+	CUDAH void setCols(int cols) { cols_ = cols; }
+	CUDAH void setOffset(int offset) { offset_ = offset; }
+	CUDAH void setBuffer(float *buffer) { buffer_ = buffer; }
+
 	//Need to fix. Only reducing rows is OK now.
 	CUDAH void resize(int rows, int cols) {
 		rows_ = rows;

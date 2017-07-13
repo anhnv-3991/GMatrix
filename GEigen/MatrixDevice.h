@@ -16,6 +16,10 @@ public:
 		buffer_ = buffer;
 	}
 
+	CUDAH bool isEmpty() {
+		return (rows_ == 0 && cols_ == 0);
+	}
+
 };
 
 class SquareMatrixDevice : public MatrixDevice {
