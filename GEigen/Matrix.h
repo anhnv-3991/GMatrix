@@ -26,14 +26,14 @@ public:
 		return offset_;
 	}
 
-	CUDAH float *buffer() const {
+	CUDAH double *buffer() const {
 		return buffer_;
 	}
 
 	CUDAH void setRows(int rows) { rows_ = rows; }
 	CUDAH void setCols(int cols) { cols_ = cols; }
 	CUDAH void setOffset(int offset) { offset_ = offset; }
-	CUDAH void setBuffer(float *buffer) { buffer_ = buffer; }
+	CUDAH void setBuffer(double *buffer) { buffer_ = buffer; }
 
 	//Need to fix. Only reducing rows is OK now.
 	CUDAH void resize(int rows, int cols) {
@@ -41,14 +41,14 @@ public:
 		cols_ = cols;
 	}
 
-	CUDAH float *cellAddr(int row, int col) {
+	CUDAH double *cellAddr(int row, int col) {
 		if (row >= rows_ || col >= cols_ || row < 0 || col < 0)
 			return NULL;
 
 		return buffer_ + (row * cols_ + col) * offset_;
 	}
 
-	CUDAH float *cellAddr(int index) {
+	CUDAH double *cellAddr(int index) {
 		if (rows_ == 1 && index >= 0 && index < cols_) {
 				return buffer_ + index * offset_;
 		} 
@@ -71,14 +71,14 @@ public:
 		}
 	}
 
-	CUDAH float& operator()(int row, int col) {
+	CUDAH double& operator()(int row, int col) {
 		if (row < 0 || col < 0 || row >= rows_ || col >= cols_)
 			exit(EXIT_FAILURE);
 
 		return buffer_[(row * cols_ + col) * offset_];
 	}
 
-	CUDAH float& operator()(int index) {
+	CUDAH double& operator()(int index) {
 		if (rows_ == 1) {
 			if (index >= 0 && index < cols_)
 				return buffer_[index * offset_];
@@ -118,7 +118,7 @@ public:
 			return true;
 	}
 
-	CUDAH float at(int row, int col) const {
+	CUDAH double at(int row, int col) const {
 		if (row < 0 || col < 0 || row >= rows_ || col >= cols_)
 			exit(EXIT_FAILURE);
 
@@ -195,7 +195,7 @@ public:
 
 		for (int i = 0; i < output.rows_; i++) {
 			for (int j = 0; j < output.cols_; j++) {
-				float tmp = 0;
+				double tmp = 0;
 				for (int k = 0; k < input0.cols_; k++) {
 					tmp += input0.at(i, k) * input1.at(k, j);
 				}
@@ -207,7 +207,7 @@ public:
 		return true;
 	}
 
-	CUDAH bool scalarMultiply(float val, Matrix &output) {
+	CUDAH bool scalarMultiply(double val, Matrix &output) {
 		if (rows_ != output.rows_ || cols_ != output.cols_)
 			return false;
 
@@ -220,7 +220,7 @@ public:
 		return true;
 	}
 
-	CUDAH bool scalarDivide(float val, Matrix &output) {
+	CUDAH bool scalarDivide(double val, Matrix &output) {
 		if (rows_ != output.rows_ || cols_ != output.cols_ || val == 0)
 			return false;
 
@@ -233,7 +233,7 @@ public:
 		return true;
 	}
 
-	CUDAH bool operator*=(float val) {
+	CUDAH bool operator*=(double val) {
 		for (int i = 0; i < rows_; i++) {
 			for (int j = 0; j < cols_; j++) {
 				buffer_[(i * cols_ + j) * offset_] *= val;
@@ -243,7 +243,7 @@ public:
 		return true;
 	}
 
-	CUDAH bool operator/=(float val) {
+	CUDAH bool operator/=(double val) {
 		if (val == 0)
 			return false;
 
@@ -270,7 +270,7 @@ public:
 	}
 
 protected:
-	float *buffer_;
+	double *buffer_;
 	int rows_, cols_, offset_;
 };
 

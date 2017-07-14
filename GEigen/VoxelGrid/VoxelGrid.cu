@@ -7,6 +7,29 @@
 
 namespace gpu {
 
+GVoxelGrid::~GVoxelGrid() {
+	if (global_voxel_ != NULL)
+		checkCudaErrors(cudaFree(global_voxel_));
+
+	if (centroid_ != NULL)
+		checkCudaErrors(cudaFree(centroid_));
+
+	if (covariance_ != NULL)
+		checkCudaErrors(cudaFree(covariance_));
+
+	if (inverse_covariance_ != NULL)
+		checkCudaErrors(cudaFree(inverse_covariance_));
+
+	if (valid_points_ != NULL)
+		checkCudaErrors(cudaFree(valid_points_));
+
+	if (starting_voxel_id_ != NULL)
+		checkCudaErrors(cudaFree(starting_voxel_id_));
+
+	if (voxel_id_ != NULL)
+		checkCudaErrors(cudaFree(voxel_id_));
+}
+
 extern "C" __global__ void initVoxelGrid(GVoxel *voxel_grid, int vgrid_x, int vgrid_y, int vgrid_z,
 											float min_xy, float min_yz, float min_zx,
 											float voxel_x, float voxel_y, float voxel_z,
@@ -20,7 +43,6 @@ extern "C" __global__ void initVoxelGrid(GVoxel *voxel_grid, int vgrid_x, int vg
 		int vgrid_id = id_x + id_y * vgrid_x + id_z * vgrid_x * vgrid_y;
 
 		GVoxel *voxel = voxel_grid + vgrid_id;
-
 		
 		voxel->minXY() = min_xy + id_z * voxel_z;
 		voxel->minYZ() = min_yz + id_x * voxel_x;
@@ -40,11 +62,9 @@ extern "C" __global__ void initVoxelGrid(GVoxel *voxel_grid, int vgrid_x, int vg
 
 void GVoxelGrid::initialize()
 {
-	float *centroid, *covariance, *inverse_covariance;
-
-	checkCudaErrors(cudaMalloc(&centroid, sizeof(float) * 3 * vgrid_x_ * vgrid_y_ * vgrid_z_));
-	checkCudaErrors(cudaMalloc(&covariance, sizeof(float) * 9 * vgrid_x_ * vgrid_y_ * vgrid_z_));
-	checkCudaErrors(cudaMalloc(&inverse_covariance, sizeof(float) * 9 * vgrid_x_ * vgrid_y_ * vgrid_z_));
+	checkCudaErrors(cudaMalloc(&centroid_, sizeof(float) * 3 * vgrid_x_ * vgrid_y_ * vgrid_z_));
+	checkCudaErrors(cudaMalloc(&covariance_, sizeof(float) * 9 * vgrid_x_ * vgrid_y_ * vgrid_z_));
+	checkCudaErrors(cudaMalloc(&inverse_covariance_, sizeof(float) * 9 * vgrid_x_ * vgrid_y_ * vgrid_z_));
 
 	int block_x = (vgrid_x_ > BLOCK_X) ? BLOCK_X : vgrid_x_;
 	int block_y = (vgrid_y_ > BLOCK_Y) ? BLOCK_Y : vgrid_y_;

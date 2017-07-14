@@ -5,33 +5,23 @@ namespace gpu {
 
 GRegistration::GRegistration()
 {
-	trans_epsilon_ = 0;
-	step_size_ = 0;
-	resolution_ = 0;
 	max_iterations_ = 0;
 	x_ = y_ = z_ = NULL;
 	points_number_ = 0;
 		
-	out_x_ = out_y_ = out_z_ = NULL;
+	trans_x_ = trans_y_ = trans_z_ = NULL;
 	out_points_num_ = 0;
 
 	converged_ = false;
 	nr_iterations_ = 0;
+
+	transformation_epsilon_ = 0;
+	target_cloud_updated_ = true;
 }
 
 void GRegistration::setTransformationEpsilon(double trans_eps)
 {
-	trans_epsilon_ = trans_eps;
-}
-
-void GRegistration::setStepSize(double step_size)
-{
-	step_size_ = step_size;
-}
-
-void GRegistration::setResolution(float resolution)
-{
-	resolution_ = resolution;
+	transformation_epsilon_ = trans_eps;
 }
 
 void GRegistration::setMaximumIterations(int max_itr)
@@ -51,38 +41,42 @@ void GRegistration::setInputSource(float *x, float *y, float *z, int points_num)
 		checkCudaErrors(cudaMemcpy(x_, x, sizeof(float) * points_number_, cudaMemcpyHostToDevice));
 		checkCudaErrors(cudaMemcpy(y_, y, sizeof(float) * points_number_, cudaMemcpyHostToDevice));
 		checkCudaErrors(cudaMemcpy(z_, z, sizeof(float) * points_number_, cudaMemcpyHostToDevice));
+
+		checkCudaErrors(cudaMalloc(&trans_x_, sizeof(float) * points_number_));
+		checkCudaErrors(cudaMalloc(&trans_y_, sizeof(float) * points_number_));
+		checkCudaErrors(cudaMalloc(&trans_z_, sizeof(float) * points_number_));
 	}
 }
 
-void GRegistration::setInitGuess(const Matrix input)
+
+void GRegistration::align(Eigen::Matrix<float, 4, 4> &guess)
 {
-	int rows = input.rows();
-	int cols = input.cols();
-	int offset = input.offset();
-	float const *ibuffer = input.buffer();
-	float *obuffer = NULL;
-
-	if (rows > 0 && cols > 0) {
-
-		init_guess_ = MatrixDevice(rows, cols);
-	}
-}
-
-void GRegistration::align()
-{
-	//initCompute() ???
+	if (!initCompute())
+		return;
 
 	converged_ = false;
 
-	final_transformation_ = IdentityMatrix(4);
-	transformation_ = IdentityMatrix(4);
-	previous_transformation_ = IdentityMatrix(4);
+	final_transformation_ = transformation_ = previous_transformation_ = Eigen::Matrix<float, 4, 4>::Identity();
 
-	computeTransformation();
+	computeTransformation(guess);
 
 	//deinitCompute()
 }
 
+bool GRegistration::initCompute()
+{
+	if (points_number_ == 0 || x_ == NULL || y_ == NULL || z_ == NULL) {
+		fprintf(stderr, "No input target dataset was given!\n");
+		return false;
+	}
+
+	if (target_cloud_updated_ && !force_no_recompute_) {
+		voxel_grid_.setInput(x_, y_, z_, points_number_);
+		target_cloud_updated_ = false;
+	}
+
+	return true;
+}
 }
 
 

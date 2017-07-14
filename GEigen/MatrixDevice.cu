@@ -12,8 +12,8 @@ namespace gpu {
 		cols_ = cols;
 		offset_ = 1;
 
-		checkCudaErrors(cudaMalloc(&buffer_, sizeof(float) * rows_ * cols_ * offset_));
-		checkCudaErrors(cudaMemset(buffer_, 0, sizeof(float) * rows_ * cols_ * offset_));
+		checkCudaErrors(cudaMalloc(&buffer_, sizeof(double) * rows_ * cols_ * offset_));
+		checkCudaErrors(cudaMemset(buffer_, 0, sizeof(double) * rows_ * cols_ * offset_));
 		checkCudaErrors(cudaDeviceSynchronize());
 	}
 }

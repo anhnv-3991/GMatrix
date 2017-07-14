@@ -87,7 +87,12 @@ public:
 		min_b_z_(0),
 		vgrid_x_(0),
 		vgrid_y_(0),
-		vgrid_z_(0) {};
+		vgrid_z_(0),
+		valid_points_num_(0),
+		qresult_size_(0),
+		valid_points_(NULL),
+		starting_voxel_id_(NULL),
+		voxel_id_(NULL){};
 
 	void setInput(float *x, float *y, float *z, int points_num);
 
@@ -149,6 +154,7 @@ public:
 	int getVgridY() { return vgrid_y_; }
 	int getVgridZ() { return vgrid_z_; }
 
+	~GVoxelGrid();
 private:
 
 	void initialize();
@@ -164,6 +170,7 @@ private:
 	float *x_, *y_, *z_;
 	int points_num_;
 	GVoxel *global_voxel_;
+	float *centroid_, *covariance_, *inverse_covariance_;
 
 	int voxel_num_;
 	float max_x_, max_y_, max_z_;

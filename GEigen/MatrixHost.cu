@@ -8,8 +8,8 @@ MatrixHost::MatrixHost(int rows, int cols) {
 	cols_ = cols;
 	offset_ = 1;
 
-	buffer_ = (float*)malloc(sizeof(float) * rows_ * cols_ * offset_);
-	memset(buffer_, 0, sizeof(float) * rows_ * cols_ * offset_);
+	buffer_ = (double*)malloc(sizeof(double) * rows_ * cols_ * offset_);
+	memset(buffer_, 0, sizeof(double) * rows_ * cols_ * offset_);
 }
 
 bool MatrixHost::operator!=(const MatrixHost mat) const
@@ -42,14 +42,14 @@ bool MatrixHost::moveToGpu(MatrixDevice output) {
 		return false;
 
 	if (offset_ == output.offset()) {
-		checkCudaErrors(cudaMemcpy(output.buffer(), buffer_, sizeof(float) * rows_ * cols_ * offset_, cudaMemcpyHostToDevice));
+		checkCudaErrors(cudaMemcpy(output.buffer(), buffer_, sizeof(double) * rows_ * cols_ * offset_, cudaMemcpyHostToDevice));
 		return true;
 	}
 	else {
-		float *tmp;
+		double *tmp;
 
-		checkCudaErrors(cudaMalloc(&tmp, sizeof(float) * rows_ * cols_ * offset_));
-		checkCudaErrors(cudaMemcpy(tmp, buffer_, sizeof(float) * rows_ * cols_ * offset_, cudaMemcpyHostToDevice));
+		checkCudaErrors(cudaMalloc(&tmp, sizeof(double) * rows_ * cols_ * offset_));
+		checkCudaErrors(cudaMemcpy(tmp, buffer_, sizeof(double) * rows_ * cols_ * offset_, cudaMemcpyHostToDevice));
 
 		MatrixDevice tmp_output(rows_, cols_, offset_, tmp);
 
@@ -70,13 +70,13 @@ bool MatrixHost::moveToHost(MatrixDevice input) {
 		return false;
 
 	if (offset_ == input.offset()) {
-		checkCudaErrors(cudaMemcpy(buffer_, input.buffer(), sizeof(float) * rows_ * cols_ * offset_, cudaMemcpyDeviceToHost));
+		checkCudaErrors(cudaMemcpy(buffer_, input.buffer(), sizeof(double) * rows_ * cols_ * offset_, cudaMemcpyDeviceToHost));
 		return true;
 	}
 	else {
-		float *tmp;
+		double *tmp;
 
-		checkCudaErrors(cudaMalloc(&tmp, sizeof(float) * rows_ * cols_ * offset_));
+		checkCudaErrors(cudaMalloc(&tmp, sizeof(double) * rows_ * cols_ * offset_));
 
 		MatrixDevice tmp_output(rows_, cols_, offset_, tmp);
 
@@ -86,7 +86,7 @@ bool MatrixHost::moveToHost(MatrixDevice input) {
 		copyMatrixDevToDev << <grid_x, block_x >> >(input, tmp_output);
 		checkCudaErrors(cudaDeviceSynchronize());
 
-		checkCudaErrors(cudaMemcpy(buffer_, tmp, sizeof(float) * rows_ * cols_ * offset_, cudaMemcpyDeviceToHost));
+		checkCudaErrors(cudaMemcpy(buffer_, tmp, sizeof(double) * rows_ * cols_ * offset_, cudaMemcpyDeviceToHost));
 		checkCudaErrors(cudaFree(tmp));
 
 		return true;
@@ -98,7 +98,7 @@ IdentityMatrixHost::IdentityMatrixHost(int size)
 	rows_ = cols_ = size;
 	offset_ = 1;
 
-	buffer_ = (float*)malloc(sizeof(float) * rows_ * cols_ * offset_);
+	buffer_ = (double*)malloc(sizeof(double) * rows_ * cols_ * offset_);
 
 	for (int i = 0; i < rows_; i++) {
 		for (int j = 0; j < cols_; j++) {
