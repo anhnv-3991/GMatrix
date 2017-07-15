@@ -5,11 +5,11 @@
 #include <cuda_runtime.h>
 #include "Registration.h"
 #include "common.h"
-#include "VoxelGrid/VoxelGrid.h"
+#include "VoxelGrid.h"
 #include <eigen3/Eigen/Geometry>
 
 namespace gpu {
-class GNormalDistributionTransform: public GRegistration {
+class GNormalDistributionsTransform: public GRegistration {
 public:
 
 	inline void setStepSize(double step_size)
@@ -32,6 +32,8 @@ public:
 		return step_size_;
 	}
 
+	void setInputTarget(float *target_x, float *target_y, float *target_z, int points_number);
+
 	inline float getResolution()
 	{
 		return resolution_;
@@ -49,10 +51,9 @@ public:
 
 protected:
 	void computeTransformation(Eigen::Matrix<float, 4, 4> &guess);
-	double computeDerivatives(MatrixDevice &score_gradient, MatrixDevice &hessian,
-								float *source_x, float *source_y, float *source_z,
-								int points_num,
-								MatrixDevice pose, bool compute_hessian);
+	double computeDerivatives(Eigen::Matrix<double, 6, 1> &score_gradient, Eigen::Matrix<double, 6, 6> &hessian,
+								float *trans_x, float *trans_y, float *trans_z,
+								int points_num, Eigen::Matrix<double, 6, 1> pose, bool compute_hessian = true);
 
 private:
 	//Copied from ndt.h
@@ -67,6 +68,10 @@ private:
       return (g_a - mu * g_0);
     }
 
+    double updateIntervalMT (double &a_l, double &f_l, double &g_l,
+								double &a_u, double &f_u, double &g_u,
+								double a_t, double f_t, double g_t);
+
     double trialValueSelectionMT (double a_l, double f_l, double g_l,
 									double a_u, double f_u, double g_u,
 									double a_t, double f_t, double g_t);
@@ -75,14 +80,14 @@ private:
 								float *out_x, float *out_y, float *out_z,
 								int points_number, Eigen::Matrix<float, 4, 4> transform);
 
-	void computeAngleDerivatives(MatrixHost pose, bool compute_hessian);
+	void computeAngleDerivatives(MatrixHost pose, bool compute_hessian = true);
 
 	double computeStepLengthMT(const Eigen::Matrix<double, 6, 1> &x, Eigen::Matrix<double, 6, 1> &step_dir,
 								double step_init, double step_max, double step_min, double &score,
 								Eigen::Matrix<double, 6, 1> &score_gradient, Eigen::Matrix<double, 6, 6> &hessian,
 								float *out_x, float *out_y, float *out_z, int points_num);
 
-	void computeHessian(Eigen::Matrix<double, 6, 6> &hessian, float *trans_x, float *trans_y, float *trans_z, Eigen::Matrix<double, 6, 1> &p);
+	void computeHessian(Eigen::Matrix<double, 6, 6> &hessian, float *trans_x, float *trans_y, float *trans_z, int points_num, Eigen::Matrix<double, 6, 1> &p);
 
 	double gauss_d1_, gauss_d2_;
 	double outlier_ratio_;
@@ -99,8 +104,10 @@ private:
 
 	double step_size_;
 	float resolution_;
-	double outlier_ratio_;
 	double trans_probability_;
+
+
+	GVoxelGrid voxel_grid_;
 };
 }
 

@@ -9,7 +9,7 @@ public:
 	MatrixDevice();
 	MatrixDevice(int rows, int cols);
 
-	CUDAH MatrixDevice(int rows, int cols, int offset, float *buffer) {
+	CUDAH MatrixDevice(int rows, int cols, int offset, double *buffer) {
 		rows_ = rows;
 		cols_ = cols;
 		offset_ = offset;

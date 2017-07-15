@@ -21,10 +21,6 @@ public:
 	SquareMatrixHost(int size) : MatrixHost(size, size) {};
 };
 
-class IdentityMatrixHost: public SquareMatrixHost {
-public:
-	IdentityMatrixHost(int size);
-};
 }
 
 #endif

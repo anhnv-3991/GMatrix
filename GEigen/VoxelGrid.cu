@@ -1,11 +1,33 @@
 #include "VoxelGrid.h"
-#include "../debug.h"
-#include "../common.h"
+#include "debug.h"
+#include "common.h"
 #include <math.h>
 #include <limits>
 #include <eigen3/Eigen/Eigenvalues>
+#include <thrust/device_ptr.h>
+#include <thrust/device_vector.h>
+#include <thrust/copy.h>
+#include <thrust/scan.h>
+#include <thrust/fill.h>
+#include <inttypes.h>
 
 namespace gpu {
+
+//Copied from cuda c programming guide
+#if __CUDA_ARCH__ < 600
+extern "C" __device__ double atomicAddD(double *address, double val)
+{
+	unsigned long long int *address_as_ull = (unsigned long long int*)address;
+	unsigned long long int old = *address_as_ull, assumed;
+
+	do {
+		assumed = old;
+		old = atomicCAS(address_as_ull, assumed, __double_as_longlong(val + __longlong_as_double(assumed)));
+	} while (assumed != old);
+
+	return __longlong_as_double(old);
+}
+#endif
 
 GVoxelGrid::~GVoxelGrid() {
 	if (global_voxel_ != NULL)
@@ -31,9 +53,9 @@ GVoxelGrid::~GVoxelGrid() {
 }
 
 extern "C" __global__ void initVoxelGrid(GVoxel *voxel_grid, int vgrid_x, int vgrid_y, int vgrid_z,
-											float min_xy, float min_yz, float min_zx,
+											float min_z, float min_x, float min_y,
 											float voxel_x, float voxel_y, float voxel_z,
-											float *centroid_buff, float *cov_buff, float *inverse_cov_buff)
+											double *centroid_buff, double *cov_buff, double *inverse_cov_buff)
 {
 	int id_x = threadIdx.x + blockIdx.x * blockDim.x;
 	int id_y = threadIdx.y + blockIdx.y * blockDim.y;
@@ -44,13 +66,13 @@ extern "C" __global__ void initVoxelGrid(GVoxel *voxel_grid, int vgrid_x, int vg
 
 		GVoxel *voxel = voxel_grid + vgrid_id;
 		
-		voxel->minXY() = min_xy + id_z * voxel_z;
-		voxel->minYZ() = min_yz + id_x * voxel_x;
-		voxel->minZX() = min_zx + id_y * voxel_y;
+		voxel->minZ() = min_z + id_z * voxel_z;
+		voxel->minX() = min_x + id_x * voxel_x;
+		voxel->minY() = min_y + id_y * voxel_y;
 
-		voxel->maxXY() = min_xy + id_z * voxel_z + voxel_z;
-		voxel->maxYZ() = min_yz + id_x * voxel_x + voxel_x;
-		voxel->maxZX() = min_zx + id_y * voxel_y + voxel_y;
+		voxel->maxZ() = min_z + id_z * voxel_z + voxel_z;
+		voxel->maxX() = min_x + id_x * voxel_x + voxel_x;
+		voxel->maxY() = min_y + id_y * voxel_y + voxel_y;
 
 		voxel->centroid() = MatrixDevice(1, 3, vgrid_x * vgrid_y * vgrid_z, centroid_buff);
 		voxel->covariance() = MatrixDevice(3, 3, vgrid_x * vgrid_y * vgrid_z, cov_buff);
@@ -62,9 +84,9 @@ extern "C" __global__ void initVoxelGrid(GVoxel *voxel_grid, int vgrid_x, int vg
 
 void GVoxelGrid::initialize()
 {
-	checkCudaErrors(cudaMalloc(&centroid_, sizeof(float) * 3 * vgrid_x_ * vgrid_y_ * vgrid_z_));
-	checkCudaErrors(cudaMalloc(&covariance_, sizeof(float) * 9 * vgrid_x_ * vgrid_y_ * vgrid_z_));
-	checkCudaErrors(cudaMalloc(&inverse_covariance_, sizeof(float) * 9 * vgrid_x_ * vgrid_y_ * vgrid_z_));
+	checkCudaErrors(cudaMalloc(&centroid_, sizeof(double) * 3 * vgrid_x_ * vgrid_y_ * vgrid_z_));
+	checkCudaErrors(cudaMalloc(&covariance_, sizeof(double) * 9 * vgrid_x_ * vgrid_y_ * vgrid_z_));
+	checkCudaErrors(cudaMalloc(&inverse_covariance_, sizeof(double) * 9 * vgrid_x_ * vgrid_y_ * vgrid_z_));
 
 	int block_x = (vgrid_x_ > BLOCK_X) ? BLOCK_X : vgrid_x_;
 	int block_y = (vgrid_y_ > BLOCK_Y) ? BLOCK_Y : vgrid_y_;
@@ -79,9 +101,9 @@ void GVoxelGrid::initialize()
 
 	initVoxelGrid<<<grid, block>>>(global_voxel_,
 									vgrid_x_, vgrid_y_, vgrid_z_,
-									min_xy_, min_yz_, min_zx_,
+									min_z_, min_x_, min_y_,
 									voxel_x_, voxel_y_, voxel_z_,
-									centroid, covariance, inverse_covariance);
+									centroid_, covariance_, inverse_covariance_);
 	checkCudaErrors(cudaDeviceSynchronize());
 }
 
@@ -101,10 +123,10 @@ __device__ int voxelId(float x, float y, float z,
  * Number of points, coordinate sum, and initial covariance 
  * matrix in a voxel is calculated by atomicAdd.
  */
-extern "C" __global__ void insertPoints(float *x, float *y, float *z, int points_num,
-										GVoxel *voxel_grid, int vgrid_x, int vgrid_y, int vgrid_z,
-										float voxel_x, float voxel_y, float voxel_z,
-										int min_b_x, int min_b_y, int min_b_z)
+extern "C" __global__ void insertPointsToGrid(float *x, float *y, float *z, int points_num,
+												GVoxel *voxel_grid, int vgrid_x, int vgrid_y, int vgrid_z,
+												float voxel_x, float voxel_y, float voxel_z,
+												int min_b_x, int min_b_y, int min_b_z)
 {
 	int index = threadIdx.x + blockIdx.x * blockDim.x;
 	int stride = blockDim.x * gridDim.x;
@@ -120,21 +142,21 @@ extern "C" __global__ void insertPoints(float *x, float *y, float *z, int points
 		MatrixDevice centr = voxel->centroid();
 		MatrixDevice cov = voxel->covariance();
 
-		atomicAdd(voxel->pointNumAddress(), 1);	
+		atomicAdd(voxel->pointNumAddress(), 1);
 		
-		atomicAdd(centr.cellAddr(0), t_x);
-		atomicAdd(centr.cellAddr(1), t_y);
-		atomicAdd(centr.cellAddr(2), t_z);
+		atomicAddD(centr.cellAddr(0), t_x);
+		atomicAddD(centr.cellAddr(1), t_y);
+		atomicAddD(centr.cellAddr(2), t_z);
 
-		atomicAdd(cov.cellAddr(0, 0), t_x * t_x);
-		atomicAdd(cov.cellAddr(0, 1), t_x * t_y);
-		atomicAdd(cov.cellAddr(0, 2), t_x * t_z);
-		atomicAdd(cov.cellAddr(1, 0), t_y * t_x);
-		atomicAdd(cov.cellAddr(1, 1), t_y * t_y);
-		atomicAdd(cov.cellAddr(1, 2), t_y * t_z);
-		atomicAdd(cov.cellAddr(2, 0), t_z * t_x);
-		atomicAdd(cov.cellAddr(2, 1), t_z * t_y);
-		atomicAdd(cov.cellAddr(2, 2), t_z * t_z);
+		atomicAddD(cov.cellAddr(0, 0), t_x * t_x);
+		atomicAddD(cov.cellAddr(0, 1), t_x * t_y);
+		atomicAddD(cov.cellAddr(0, 2), t_x * t_z);
+		atomicAddD(cov.cellAddr(1, 0), t_y * t_x);
+		atomicAddD(cov.cellAddr(1, 1), t_y * t_y);
+		atomicAddD(cov.cellAddr(1, 2), t_y * t_z);
+		atomicAddD(cov.cellAddr(2, 0), t_z * t_x);
+		atomicAddD(cov.cellAddr(2, 1), t_z * t_y);
+		atomicAddD(cov.cellAddr(2, 2), t_z * t_z);
 	}
 }
 
@@ -233,13 +255,13 @@ extern "C" __global__ void updateVoxelCentroid(GVoxel *voxel_grid, int voxel_num
 
 void GVoxelGrid::insertPoints()
 {
-	int block_x = (points_num_ > BLOCK_SIZE_X) ? BLOCK_SIZE_X : points_num;
+	int block_x = (points_num_ > BLOCK_SIZE_X) ? BLOCK_SIZE_X : points_num_;
 	int grid_x = (points_num_ - 1) / block_x + 1;
 
-	insertPoints<<<grid_x, block_x>>>(x_, y_, z_, points_num_,
-										global_voxel_, vgrid_x_, vgrid_y_, vgrid_z_,
-										voxel_x_, voxel_y_, voxel_z_,
-										min_b_x_, min_b_y_, min_b_z_);
+	insertPointsToGrid<<<grid_x, block_x>>>(x_, y_, z_, points_num_,
+											global_voxel_, vgrid_x_, vgrid_y_, vgrid_z_,
+											voxel_x_, voxel_y_, voxel_z_,
+											min_b_x_, min_b_y_, min_b_z_);
 	int voxel_num = vgrid_x_ * vgrid_y_ * vgrid_z_;
 
 	block_x = (voxel_num > BLOCK_SIZE_X) ? BLOCK_SIZE_X : voxel_num;
@@ -253,6 +275,8 @@ void GVoxelGrid::insertPoints()
 //Input are supposed to be in device memory
 void GVoxelGrid::setInput(float *x, float *y, float *z, int points_num)
 {
+	if (points_num <= 0)
+		return;
 	x_ = x;
 	y_ = y;
 	z_ = z;
@@ -307,7 +331,7 @@ void GVoxelGrid::findBoundaries()
 	int points_num = points_num_;
 
 	while (points_num > 1) {
-		int half_points_num = (poinst_num - 1) / 2 + 1;
+		int half_points_num = (points_num - 1) / 2 + 1;
 		int block_x = (half_points_num > BLOCK_SIZE_X) ? BLOCK_SIZE_X : half_points_num;
 		int grid_x = (half_points_num - 1) / block_x + 1;
 
@@ -346,9 +370,7 @@ __device__ float squareDistance(float x, float y, float z, float a, float b, flo
 }
 
 
-
-
-extern "C" __global__ void radiusSearch1(float *x, float *y, float *z, int radius, int max_nn, int points_num,
+extern "C" __global__ void radiusSearch1(float *x, float *y, float *z, float radius, int max_nn, int points_num,
 											GVoxel *grid, int vgrid_x, int vgrid_y, int vgrid_z,
 											float voxel_x, float voxel_y, float voxel_z,
 											int min_b_x, int min_b_y, int min_b_z,
@@ -365,9 +387,9 @@ extern "C" __global__ void radiusSearch1(float *x, float *y, float *z, int radiu
 		float t_y = y[i];
 		float t_z = z[i];
 
-		int id_x = static_cast<int>(floor(x / voxel_x) - static_cast<float>(min_b_x));
-		int id_y = static_cast<int>(floor(y / voxel_y) - static_cast<float>(min_b_y));
-		int id_z = static_cast<int>(floor(z / voxel_z) - static_cast<float>(min_b_z));
+		int id_x = static_cast<int>(floorf(t_x / voxel_x) - static_cast<float>(min_b_x));
+		int id_y = static_cast<int>(floorf(t_y / voxel_y) - static_cast<float>(min_b_y));
+		int id_z = static_cast<int>(floorf(t_z / voxel_z) - static_cast<float>(min_b_z));
 
 		int max_id_x = static_cast<int>(ceilf((t_x + radius) / voxel_x) - static_cast<float>(min_b_x));
 		int max_id_y = static_cast<int>(ceilf((t_y + radius) / voxel_y) - static_cast<float>(min_b_y));
@@ -377,6 +399,9 @@ extern "C" __global__ void radiusSearch1(float *x, float *y, float *z, int radiu
 		int min_id_y = static_cast<int>(ceilf((t_y - radius) / voxel_y) - static_cast<float>(min_b_y));
 		int min_id_z = static_cast<int>(ceilf((t_z - radius) / voxel_z) - static_cast<float>(min_b_z));
 
+		/* Find intersection of the cube containing the
+		 * NN sphere of the point and the voxel grid
+		 */
 		max_id_x = (max_id_x > max_b_x) ? max_b_x : max_id_x;
 		max_id_y = (max_id_y > max_b_y) ? max_b_y : max_id_y;
 		max_id_z = (max_id_z > max_b_z) ? max_b_z : max_id_z;
@@ -391,7 +416,7 @@ extern "C" __global__ void radiusSearch1(float *x, float *y, float *z, int radiu
 			for (int k = min_id_y; k <= max_id_y && nn < max_nn; k++) {
 				for (int l = min_id_z; l <= max_id_z && nn < max_nn; l++) {
 					int voxel_id = j + k * vgrid_x + l * vgrid_x * vgrid_y;
-					GVoxel *voxel = grid[voxel_id];
+					GVoxel *voxel = grid + voxel_id;
 					int point_num = voxel->pointNum();
 
 					float centroid_x = (point_num > 0) ? voxel->centroid()(0) : FLT_MAX;
@@ -404,7 +429,7 @@ extern "C" __global__ void radiusSearch1(float *x, float *y, float *z, int radiu
 		}
 
 		found_voxel_num[i] = nn;
-		valid_point[i] = (nn == 0) ? 0 : 1;
+		valid_points[i] = (nn == 0) ? 0 : 1;
 
 		max_vid_x[i] = max_id_x;
 		max_vid_y[i] = max_id_y;
@@ -425,7 +450,7 @@ extern "C" __global__ void collectValidPoints(int *input, int *output, int *writ
 	}
 }
 
-extern "C" __global__ void radiusSearch2(float *x, float *y, float *z, int radius, int max_nn, int points_num,
+extern "C" __global__ void radiusSearch2(float *x, float *y, float *z, float radius, int max_nn, int points_num,
 											GVoxel *grid, int vgrid_x, int vgrid_y, int vgrid_z,
 											int *max_vid_x, int *max_vid_y, int *max_vid_z,
 											int *min_vid_x, int *min_vid_y, int *min_vid_z,
@@ -457,8 +482,8 @@ extern "C" __global__ void radiusSearch2(float *x, float *y, float *z, int radiu
 		for (int j = min_id_x; j <= max_id_x && nn < max_nn; j++) {
 			for (int k = min_id_y; k <= max_id_y && nn < max_nn; k++) {
 				for (int l = min_id_z; l <= max_id_z && nn < max_nn; l++) {
-					int voxel_id = j + k * vgrid_x + l * vgrid_x * vgrid_y;
-					GVoxel *voxel = grid[voxel_id];
+					int vid = j + k * vgrid_x + l * vgrid_x * vgrid_y;
+					GVoxel *voxel = grid + vid;
 					int point_num = voxel->pointNum();
 
 					float centroid_x = (point_num > 0) ? voxel->centroid()(0) : FLT_MAX;
@@ -466,7 +491,7 @@ extern "C" __global__ void radiusSearch2(float *x, float *y, float *z, int radiu
 					float centroid_z = (point_num > 0) ? voxel->centroid()(2) : FLT_MAX;
 
 					if (squareDistance(centroid_x, centroid_y, centroid_z, t_x, t_y, t_z) <= radius * radius) {
-						voxel_id[write_location] = voxel_id;
+						voxel_id[write_location] = vid;
 
 						write_location++;
 						nn++;
@@ -488,7 +513,7 @@ void GVoxelGrid::ExclusiveScan(T *input, int ele_num, T *sum)
 	*sum = *(dev_ptr + ele_num - 1);
 }
 
-void GVoxelGrid::radiusSearch(float *qx, float *qy, float *qz, int points_num, int radius, int max_nn)
+void GVoxelGrid::radiusSearch(float *qx, float *qy, float *qz, int points_num, float radius, int max_nn)
 {
 	int block_x = (points_num > BLOCK_SIZE_X) ? BLOCK_SIZE_X : points_num;
 	int grid_x = (points_num - 1) / block_x + 1;
@@ -506,7 +531,7 @@ void GVoxelGrid::radiusSearch(float *qx, float *qy, float *qz, int points_num, i
 	checkCudaErrors(cudaMalloc(&min_vid_y, sizeof(int) * points_num));
 	checkCudaErrors(cudaMalloc(&min_vid_z, sizeof(int) * points_num));
 
-	chechCudaErrors(cudaMalloc(&found_voxel_num, sizeof(int) * (points_num + 1)));
+	checkCudaErrors(cudaMalloc(&found_voxel_num, sizeof(int) * (points_num + 1)));
 	checkCudaErrors(cudaMalloc(&valid_point_tmp, sizeof(int) * (points_num + 1)));
 
 	radiusSearch1<<<grid_x, block_x>>>(qx, qy, qz, radius, max_nn, points_num,

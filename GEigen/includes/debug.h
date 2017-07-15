@@ -3,6 +3,8 @@
 
 #include <cuda.h>
 #include <cuda_runtime.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 inline void gassert(cudaError_t err_code, const char *file, int line)
 {

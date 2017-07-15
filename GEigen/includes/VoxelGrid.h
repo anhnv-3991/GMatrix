@@ -4,31 +4,31 @@
 #include <cuda.h>
 #include <cuda_runtime.h>
 #include <device_launch_parameters.h>
-#include "../common.h"
-#include "../MatrixDevice.h"
+#include "common.h"
+#include "MatrixDevice.h"
 #include <float.h>
 
 namespace gpu {
 class GVoxel {
 public:
 	CUDAH GVoxel() :
-			max_xy_(0),
-			max_yz_(0),
-			max_zx_(0),
-			min_xy_(0),
-			min_yz_(0),
-			min_zx_(0),
+			max_z_(0),
+			max_x_(0),
+			max_y_(0),
+			min_z_(0),
+			min_x_(0),
+			min_y_(0),
 			point_num_(0){};
 
-	CUDAH GVoxel(float max_xy, float max_yz, float max_zx,
-					float min_xy, float min_yz, float min_zx,
+	CUDAH GVoxel(float max_z, float max_x, float max_y,
+					float min_z, float min_x, float min_y,
 					int point_num):
-			max_xy_(max_xy),
-			max_yz_(max_yz),
-			max_zx_(max_zx),
-			min_xy_(min_xy),
-			min_yz_(min_yz),
-			min_zx_(min_zx),
+			max_z_(max_z),
+			max_x_(max_x),
+			max_y_(max_y),
+			min_z_(min_z),
+			min_x_(min_x),
+			min_y_(min_y),
 			point_num_(point_num){};
 
 	CUDAH MatrixDevice& centroid() { return centroid_; }
@@ -37,24 +37,24 @@ public:
 	
 	CUDAH MatrixDevice& inverseCovariance() { return icov_; }
 
-	CUDAH float sizeXY() { return max_xy_ - min_xy_; }
-	CUDAH float sizeYZ() { return max_yz_ - min_yz_; }
-	CUDAH float sizeZX() { return max_zx_ - min_zx_; }
+	CUDAH float sizeZ() { return max_z_ - min_z_; }
+	CUDAH float sizeX() { return max_x_ - min_x_; }
+	CUDAH float sizeY() { return max_y_ - min_y_; }
 	
 	CUDAH int& pointNum() { return point_num_; }
 	CUDAH int* pointNumAddress() { return &point_num_; }
 
-	CUDAH float& maxXY() { return max_xy_; }
-	CUDAH float& maxYZ() { return max_yz_; }
-	CUDAH float& maxZX() { return max_zx_; }
+	CUDAH float& maxZ() { return max_z_; }
+	CUDAH float& maxX() { return max_x_; }
+	CUDAH float& maxY() { return max_y_; }
 
-	CUDAH float& minXY() { return min_xy_; }
-	CUDAH float& minYZ() { return min_yz_; }
-	CUDAH float& minZX() { return min_zx_; }
+	CUDAH float& minZ() { return min_z_; }
+	CUDAH float& minX() { return min_x_; }
+	CUDAH float& minY() { return min_y_; }
 	
 protected:
-	float max_xy_, max_yz_, max_zx_;
-	float min_xy_, min_yz_, min_zx_;
+	float max_z_, max_x_, max_y_;
+	float min_z_, min_x_, min_y_;
 	int point_num_;
 	MatrixDevice cov_;
 	MatrixDevice centroid_;
@@ -92,20 +92,19 @@ public:
 		qresult_size_(0),
 		valid_points_(NULL),
 		starting_voxel_id_(NULL),
-		voxel_id_(NULL){};
+		voxel_id_(NULL),
+		centroid_(NULL),
+		covariance_(NULL),
+		inverse_covariance_(NULL){};
 
 	void setInput(float *x, float *y, float *z, int points_num);
 
 	void setMinVoxelSize(int size);
 
-	void radiusSearch(float *qx, float *qy, float *qz, int points_num, int radius, int max_nn);
+	void radiusSearch(float *qx, float *qy, float *qz, int points_num, float radius, int max_nn);
 
 	int *getValidPoints() {
 		return valid_points_;
-	}
-
-	int *getNeighborIds() {
-		return neighbor_id_;
 	}
 
 	int *getVoxelIds() {
@@ -123,10 +122,6 @@ public:
 	GVoxel *getVoxelList() {
 		return global_voxel_;
 	}
-
-	int getVoxelX() { return voxel_x_; }
-	int getVoxelY() { return voxel_y_; }
-	int getVoxelZ() { return voxel_z_; }
 
 	int getVoxelNum() { return voxel_num_; }
 
@@ -164,13 +159,13 @@ private:
 	void findBoundaries();
 
 	template <typename T = int>
-	void GVoxelGrid::ExclusiveScan(T *input, int ele_num, T *sum);
+	void ExclusiveScan(T *input, int ele_num, T *sum);
 
 	//Coordinate of input points
 	float *x_, *y_, *z_;
 	int points_num_;
 	GVoxel *global_voxel_;
-	float *centroid_, *covariance_, *inverse_covariance_;
+	double *centroid_, *covariance_, *inverse_covariance_;
 
 	int voxel_num_;
 	float max_x_, max_y_, max_z_;

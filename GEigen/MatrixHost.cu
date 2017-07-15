@@ -93,18 +93,4 @@ bool MatrixHost::moveToHost(MatrixDevice input) {
 	}
 }
 
-IdentityMatrixHost::IdentityMatrixHost(int size)
-{
-	rows_ = cols_ = size;
-	offset_ = 1;
-
-	buffer_ = (double*)malloc(sizeof(double) * rows_ * cols_ * offset_);
-
-	for (int i = 0; i < rows_; i++) {
-		for (int j = 0; j < cols_; j++) {
-			buffer_[i * cols_ + j] = (i == j) ? 1 : 0;
-		}
-	}
-}
-
 }

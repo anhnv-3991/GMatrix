@@ -29,6 +29,9 @@ public:
 
 	void setInputSource(float *x, float *y, float *z, int points_num);
 
+	void setInputTarget(float *target_x, float *target_y, float *target_z, int points_number);
+
+	void freeInputTarget();
 
 	inline Eigen::Matrix<float, 4, 4> getFinalTransformation()
 	{
@@ -51,9 +54,9 @@ protected:
 
 	Eigen::Matrix<float, 4, 4> final_transformation_, transformation_, previous_transformation_;
 
-	GVoxelGrid voxel_grid_;
-
 	bool target_cloud_updated_;
+	float *target_x_, *target_y_, *target_z_;
+	int target_points_number_;
 };
 }
 
